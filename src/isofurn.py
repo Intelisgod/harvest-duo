@@ -801,6 +801,33 @@ def surface_height(kind):
     return TOPH.get(kind, 0)
 
 
+_FACE = ((0, 1), (-1, 0), (0, -1), (1, 0))      # rot -> the way an item faces
+
+
+def _card(surf, P, x, y, hw, t, z0, z1, rot, col, base=0, face=None):
+    """A small upright panel (photo frame, mirror, laptop lid...) standing at
+    tile point (x, y), `hw` tiles half-wide, `t` thick, from z0 to z1 px above
+    `base`, facing `rot`. When its front faces the camera, `face(fp)` paints
+    it through fp(u, v) -> screen (u: 0..1 left->right as seen from the
+    front, v: 0..1 top->bottom). Returns True if the front was visible."""
+    fx, fy = _FACE[rot % 4]
+    lx, ly = abs(fy), abs(fx)
+    xs = [x + fx * a + lx * b for a in (-t / 2, t / 2) for b in (-hw, hw)]
+    ys = [y + fy * a + ly * b for a in (-t / 2, t / 2) for b in (-hw, hw)]
+    _box(surf, P, min(xs), min(ys), max(xs), max(ys), z1 - z0, col, base=base + z0)
+    if rot % 4 not in (0, 3) or face is None:
+        return False
+    # the front plane, u runs along the item's own right-hand side
+    rx, ry = (-fy, fx)                       # right of the facing, in tiles
+    cx, cy = x + fx * t / 2, y + fy * t / 2
+
+    def fp(u, v):
+        px, py = P(cx + rx * (u - 0.5) * 2 * hw * -1, cy + ry * (u - 0.5) * 2 * hw * -1)
+        return (px, py - base - z1 + (z1 - z0) * v)
+    face(fp)
+    return True
+
+
 def draw_top(surf, P, x, y, kind, color, base, on=False, rot=0):
     """Draw one tabletop item centred on tile point (x, y), `base` px up.
     `rot` (0-3 quarter turns) turns items that have a front (frames, lamps,
@@ -809,9 +836,10 @@ def draw_top(surf, P, x, y, kind, color, base, on=False, rot=0):
     cx, cy = int(c[0]), int(c[1])
     wood = (150, 110, 70)
 
+    sw, sh = (0.16, 0.12) if rot % 2 == 0 else (0.12, 0.16)
     if kind == "paper_stack":                  # small messy stack of sheets
         for i, (jx, jy) in enumerate(((0.03, 0.02), (-0.02, 0.01), (0.01, -0.01))):
-            _diamond(surf, P, x - 0.16 + jx, y - 0.12 + jy, x + 0.16 + jx, y + 0.12 + jy,
+            _diamond(surf, P, x - sw + jx, y - sh + jy, x + sw + jx, y + sh + jy,
                      (246, 244, 238) if i == 2 else (228, 226, 218),
                      h=base + i, border=(186, 182, 172))
         for i in range(2):                     # a line or two of writing
@@ -824,19 +852,44 @@ def draw_top(surf, P, x, y, kind, color, base, on=False, rot=0):
         pygame.draw.line(surf, (170, 60, 60), (cx + 2, cy - 6), (cx + 4, cy - 13), 2)
 
     elif kind == "desk_mirror":                # little vanity mirror on a foot
-        _box(surf, P, x - 0.10, y - 0.06, x + 0.10, y + 0.06, 2, wood, base=base)
+        _box(surf, P, x - 0.09, y - 0.09, x + 0.09, y + 0.09, 2, wood, base=base)
         pygame.draw.line(surf, _dk(color, 0.7), (cx, cy - 2), (cx, cy - 7), 2)
-        pygame.draw.ellipse(surf, color, (cx - 6, cy - 22, 12, 16))
-        pygame.draw.ellipse(surf, (205, 225, 235), (cx - 4, cy - 20, 8, 12))
-        pygame.draw.line(surf, (238, 248, 252), (cx - 2, cy - 11), (cx + 2, cy - 17), 1)
+
+        def _glass(fp):
+            q = [fp(0.12, 0.06), fp(0.88, 0.06), fp(0.88, 0.94), fp(0.12, 0.94)]
+            pygame.draw.polygon(surf, (205, 225, 235), q)
+            pygame.draw.polygon(surf, (236, 246, 250),
+                                [fp(0.2, 0.7), fp(0.55, 0.12), fp(0.7, 0.12), fp(0.3, 0.8)])
+        _card(surf, P, x, y, 0.15, 0.035, 7, 22, rot, color, base, _glass)
 
     elif kind == "photo_frame":                # standing frame with a sunny photo
-        _box(surf, P, x - 0.09, y - 0.05, x + 0.09, y + 0.05, 2, wood, base=base)
-        fr = pygame.Rect(cx - 6, cy - 16, 12, 11)
-        pygame.draw.rect(surf, wood, fr)
-        pygame.draw.rect(surf, (150, 200, 230), fr.inflate(-4, -4))
-        pygame.draw.circle(surf, (250, 220, 120), (fr.right - 4, fr.y + 4), 2)
-        pygame.draw.rect(surf, _dk(wood, 0.7), fr, 1)
+        def _photo(fp):
+            q = [fp(0.16, 0.14), fp(0.84, 0.14), fp(0.84, 0.86), fp(0.16, 0.86)]
+            pygame.draw.polygon(surf, (150, 200, 230), q)
+            pygame.draw.polygon(surf, (120, 176, 110),
+                                [fp(0.16, 0.86), fp(0.16, 0.62), fp(0.5, 0.5),
+                                 fp(0.84, 0.66), fp(0.84, 0.86)])
+            sun = fp(0.68, 0.32)
+            pygame.draw.circle(surf, (250, 220, 120), (int(sun[0]), int(sun[1])), 2)
+        _card(surf, P, x, y, 0.15, 0.035, 1, 14, rot, wood, base, _photo)
+        _box(surf, P, x - 0.06, y - 0.06, x + 0.06, y + 0.06, 1, _dk(wood, 0.8),
+             base=base)
+
+    elif kind == "desk_lamp":                  # small lamp, the head leans forward
+        fx, fy = _FACE[rot % 4]
+        _box(surf, P, x - 0.07, y - 0.07, x + 0.07, y + 0.07, 2, (90, 94, 102),
+             base=base)
+        hx, hy = x + fx * 0.07, y + fy * 0.07
+        head = _up(P(hx, hy), base + 15)
+        pygame.draw.line(surf, (120, 124, 132), (cx, cy - 2), (int(head[0]), int(head[1]) + 2), 2)
+        hxi, hyi = int(head[0]), int(head[1])
+        pygame.draw.polygon(surf, _dk(color, 0.8), [(hxi - 6, hyi + 3), (hxi + 6, hyi + 3),
+                                                    (hxi + 3, hyi - 4), (hxi - 3, hyi - 4)])
+        pygame.draw.polygon(surf, color, [(hxi - 5, hyi + 2), (hxi + 5, hyi + 2),
+                                          (hxi + 2, hyi - 3), (hxi - 2, hyi - 3)])
+        if on:
+            pygame.draw.circle(surf, (255, 222, 150), (hxi, hyi + 4), 4)
+            pygame.draw.circle(surf, (255, 246, 200), (hxi, hyi + 4), 2)
 
     elif kind == "candle_small":               # candle (lit only when switched on)
         _box(surf, P, x - 0.06, y - 0.06, x + 0.06, y + 0.06, 6, (240, 236, 224),
@@ -849,7 +902,63 @@ def draw_top(surf, P, x, y, kind, color, base, on=False, rot=0):
     elif kind == "book_stack":                 # three stacked books
         for i, bc in enumerate(((200, 90, 80), (90, 140, 200), (220, 190, 100))):
             inset = 0.13 - i * 0.015
-            _box(surf, P, x - inset, y - 0.10, x + inset, y + 0.10, 3, bc,
+            iw, ih = (inset, 0.10) if rot % 2 == 0 else (0.10, inset)
+            _box(surf, P, x - iw, y - ih, x + iw, y + ih, 3, bc,
+                 base=base + i * 3)
+
+    elif kind == "vase_flowers":               # little vase with three blooms
+        _box(surf, P, x - 0.07, y - 0.07, x + 0.07, y + 0.07, 8, color, base=base)
+        for dx, dy, fc in ((-4, -3, (236, 120, 130)), (4, -2, (250, 210, 110)),
+                           (0, -6, (190, 130, 220))):
+            pygame.draw.line(surf, (96, 160, 96), (cx, cy - 8),
+                             (cx + dx, cy - 14 + dy), 1)
+            pygame.draw.circle(surf, fc, (cx + dx, cy - 15 + dy), 3)
+            pygame.draw.circle(surf, (255, 244, 200), (cx + dx, cy - 15 + dy), 1)
+
+    elif kind == "fruit_bowl":                 # bowl of fruit
+        pygame.draw.ellipse(surf, _dk(color, 0.8), (cx - 8, cy - 4, 16, 8))
+        pygame.draw.ellipse(surf, color, (cx - 7, cy - 5, 14, 6))
+        for dx, fc in ((-4, (220, 80, 70)), (0, (240, 180, 70)), (4, (130, 190, 90))):
+            pygame.draw.circle(surf, fc, (cx + dx, cy - 6), 3)
+
+    elif kind == "coffee_mug":                 # steaming mug, handle on its right
+        _box(surf, P, x - 0.05, y - 0.05, x + 0.05, y + 0.05, 6, color, base=base)
+        fx, fy = _FACE[rot % 4]
+        hp = _up(P(x - fy * 0.07, y + fx * 0.07), base + 3)
+        pygame.draw.circle(surf, _dk(color, 0.7), (int(hp[0]), int(hp[1])), 3, 1)
+        for i in (0, 1):                       # steam wisps
+            pygame.draw.arc(surf, (228, 232, 238),
+                            (cx - 3 + i * 3, cy - 14 - i * 3, 4, 6), 0.4, 2.6, 1)
+
+    elif kind == "desk_lamp":                  # small lamp, the head leans forward
+        fx, fy = _FACE[rot % 4]
+        _box(surf, P, x - 0.07, y - 0.07, x + 0.07, y + 0.07, 2, (90, 94, 102),
+             base=base)
+        hx, hy = x + fx * 0.07, y + fy * 0.07
+        head = _up(P(hx, hy), base + 15)
+        pygame.draw.line(surf, (120, 124, 132), (cx, cy - 2), (int(head[0]), int(head[1]) + 2), 2)
+        hxi, hyi = int(head[0]), int(head[1])
+        pygame.draw.polygon(surf, _dk(color, 0.8), [(hxi - 6, hyi + 3), (hxi + 6, hyi + 3),
+                                                    (hxi + 3, hyi - 4), (hxi - 3, hyi - 4)])
+        pygame.draw.polygon(surf, color, [(hxi - 5, hyi + 2), (hxi + 5, hyi + 2),
+                                          (hxi + 2, hyi - 3), (hxi - 2, hyi - 3)])
+        if on:
+            pygame.draw.circle(surf, (255, 222, 150), (hxi, hyi + 4), 4)
+            pygame.draw.circle(surf, (255, 246, 200), (hxi, hyi + 4), 2)
+
+    elif kind == "candle_small":               # candle (lit only when switched on)
+        _box(surf, P, x - 0.06, y - 0.06, x + 0.06, y + 0.06, 6, (240, 236, 224),
+             base=base)
+        pygame.draw.line(surf, (140, 130, 110), (cx, cy - 6), (cx, cy - 8), 1)
+        if on:
+            pygame.draw.circle(surf, (255, 210, 120), (cx, cy - 10), 3)
+            pygame.draw.circle(surf, (255, 245, 200), (cx, cy - 10), 1)
+
+    elif kind == "book_stack":                 # three stacked books
+        for i, bc in enumerate(((200, 90, 80), (90, 140, 200), (220, 190, 100))):
+            inset = 0.13 - i * 0.015
+            iw, ih = (inset, 0.10) if rot % 2 == 0 else (0.10, inset)
+            _box(surf, P, x - iw, y - ih, x + iw, y + ih, 3, bc,
                  base=base + i * 3)
 
     elif kind == "vase_flowers":               # little vase with three blooms
@@ -893,7 +1002,8 @@ def draw_top(surf, P, x, y, kind, color, base, on=False, rot=0):
         pygame.draw.circle(surf, (236, 150, 170), (cx, cy - 15), 2)   # tiny flower
 
     elif kind == "music_sheet":                # sheet of music (great on the piano)
-        _diamond(surf, P, x - 0.15, y - 0.11, x + 0.15, y + 0.11,
+        mw, mh = (0.15, 0.11) if rot % 2 == 0 else (0.11, 0.15)
+        _diamond(surf, P, x - mw, y - mh, x + mw, y + mh,
                  (248, 246, 240), h=base, border=(190, 186, 176))
         for i in range(3):                     # staff lines
             pygame.draw.line(surf, (150, 150, 160),

@@ -13,6 +13,7 @@ from .settings import TILE, SCREEN_W, SCREEN_H, WHITE, GOLD, UI_BORDER
 from . import furniture as F
 from . import homeiso as HI
 from . import isofurn as IF
+from . import tabletop as TT
 from .world import FLOOR
 
 PANEL_X = 992
@@ -47,6 +48,14 @@ class BuildMode:
         self.cur = (8, 6)
         self.cur_pt = (8.5, 6.5)  # fractional mouse tile point (corner aiming)
         self.undo = []            # snapshots for Ctrl+Z (capped at 40)
+        # free-form tabletop placement: where the item in hand would land
+        # (surface, x, y, ok, guides), its on-screen ghost (smoothed toward
+        # that spot every frame) and the spot a dragged item came from
+        self.top_target = None
+        self._ghost = None
+        self._ghost_t = None
+        self._drag_from = None
+        self._hover = None
         self.selected = None     # a Placed being edited
         self.dragging = False
         self.msg = ""
@@ -196,78 +205,79 @@ class BuildMode:
                 return q
         return None
 
-    def _aim_surface(self, pos):
-        """Aim point for tabletop placement, corrected for surface LIFT: the
-        mouse points at a table TOP some px above the floor plane. Try every
-        surface height (tallest first) until the corrected point really lands
-        on a surface of that height; otherwise fall back to the floor plane."""
-        area = self.g.world.area
-        for base in sorted({HI.top_height(k) for k in F.SURFACES}, reverse=True):
-            fx, fy = HI.screen_to_point(area, pos[0], pos[1] + base)
-            cell = (int(math.floor(fx)), int(math.floor(fy)))
-            sup = self._top_support(*cell)
-            if sup and HI.top_height(sup.kind) == base:
-                return cell, (fx, fy)
-        fx, fy = HI.screen_to_point(area, *pos)
-        return (int(math.floor(fx)), int(math.floor(fy))), (fx, fy)
+    # ---------- free-form tabletop placement (see tabletop.py) ----------
+    def _free_mode(self):
+        return bool(pygame.key.get_mods() & pygame.KMOD_SHIFT)
+
+    def _top_aim(self, kind, pos=None, ignore=None, point=None):
+        """(surface, x, y, ok, guides) for a `kind` tabletop item aimed at the
+        mouse `pos` (or a tile `point` for keyboard aiming). ok=False: no
+        surface there / no room left on it."""
+        world = self.g.world
+        surfs = TT.surfaces(world)
+        area = world.area
+        if point is not None:
+            px, py = point
+            cand = [sf for sf in surfs if sf.contains(px, py, 0.02)]
+            if not cand:
+                return None, px, py, False, []
+            sf = max(cand, key=lambda c: c.h)
+        else:
+            ox, oy = HI.origin(area)
+            sf, px, py = TT.aim(area, surfs, pos[0], pos[1], HI.screen_to_point,
+                                lambda a, b: HI.proj(ox, oy, a, b))
+            if sf is None:
+                return None, px, py, False, []
+        others = TT.others_on(sf, world, surfs, ignore=ignore)
+        x, y, ok, guides = TT.resolve(sf, kind, px, py, others,
+                                      snap=not self._free_mode())
+        return sf, x, y, ok, guides
 
     def _top_support(self, gx, gy, ignore=None):
-        """The flat-topped ground piece under (gx, gy) that tabletop decor
-        would sit on, or None."""
+        """The flat-topped piece under (gx, gy) tabletop decor would sit on
+        (kept for callers that think in cells), or None."""
         for q in reversed(self.g.world.home_furniture):
             if (q is not ignore and F.CAT[q.kind]["layer"] == "ground"
                     and q.kind in F.SURFACES and (gx, gy) in q.cells()):
                 return q
         return None
 
-    def _top_count(self, gx, gy, ignore=None):
-        return sum(1 for q in self.g.world.home_furniture
-                   if q is not ignore and F.CAT[q.kind]["layer"] == "top"
-                   and (q.gx, q.gy) == (gx, gy))
-
-    def _top_slot(self, gx, gy, ignore=None):
-        """The FREE anchor slot on (gx, gy) nearest the mouse, or None when
-        there is no surface / every corner is taken -- the player aims at the
-        exact corner they want."""
-        sup = self._top_support(gx, gy)
-        if sup is None:
-            return None
-        taken = [(q.ox, q.oy) for q in self.g.world.home_furniture
-                 if q is not ignore and F.CAT[q.kind]["layer"] == "top"
-                 and (q.gx, q.gy) == (gx, gy)]
-        free = [s for s in F.surface_slots(sup.kind)
-                if all(abs(s[0] - tx) + abs(s[1] - ty) > 0.05 for tx, ty in taken)]
-        if not free:
-            return None
-        fx, fy = self.cur_pt
-        return min(free, key=lambda s: (gx + 0.5 + s[0] - fx) ** 2
-                   + (gy + 0.5 + s[1] - fy) ** 2)
-
     def _pick_top(self, pos):
-        """The tabletop item whose ON-SCREEN body is nearest the mouse (within
-        ~15px) -- clicking the little item itself picks it, lifted height and
-        all, so each one can be moved and sold on its own."""
-        area = self.g.world.area
+        """The tabletop item whose ON-SCREEN body is under the mouse (nearest
+        the camera first) -- clicking the little item itself picks it."""
+        world = self.g.world
+        area = world.area
         ox, oy = HI.origin(area)
-        best, bd = None, 15 * 15
-        for q in self.g.world.home_furniture:
+        surfs = TT.surfaces(world)
+        best, bd = None, None
+        for q in world.home_furniture:
             if F.CAT[q.kind]["layer"] != "top":
                 continue
-            sup = self._top_support(q.gx, q.gy)
-            base = HI.top_height(sup.kind) if sup else 0
-            pt = HI.proj(ox, oy, q.gx + 0.5 + q.ox, q.gy + 0.5 + q.oy)
-            d = (pos[0] - pt[0]) ** 2 + (pos[1] - (pt[1] - base - 6)) ** 2
-            if d < bd:
+            sf = TT.support_of(q, surfs)
+            base = sf.h if sf else 0
+            x, y = TT.pos(q)
+            pt = HI.proj(ox, oy, x, y)
+            r = 8 + F.top_radius(q.kind) * 40
+            d = (pos[0] - pt[0]) ** 2 + ((pos[1] - (pt[1] - base - 7)) * 1.3) ** 2
+            if d <= r * r and (bd is None or d < bd - 1 or
+                               (abs(d - bd) <= 1 and x + y > sum(TT.pos(best)))):
                 best, bd = q, d
         return best
+
+    def _items_riding(self, piece):
+        """Tabletop items standing on `piece` (they travel with it)."""
+        world = self.g.world
+        surfs = TT.surfaces(world)
+        sf = next((x for x in surfs if piece in x.pieces), None)
+        if sf is None:
+            return []
+        return TT.items_on(sf, world, surfs)
 
     def can_place(self, item, gx, gy, rot, ignore=None, off=(0.0, 0.0)):
         area = self.g.world.area
         if F.CAT[item]["layer"] == "top":
-            # must sit on a flat-topped piece; slot count depends on the surface
-            sup = self._top_support(gx, gy)
-            return (sup is not None
-                    and self._top_count(gx, gy, ignore) < len(F.surface_slots(sup.kind)))
+            # must find room on a surface over (or around) that cell
+            return self._top_aim(item, point=(gx + 0.5, gy + 0.5), ignore=ignore)[3]
         if F.CAT[item]["layer"] == "wall":
             # may hang on the back (top) wall row OR the left wall column, one per cell
             on_top = (gy == 0 and 1 <= gx <= area.w - 2)
@@ -309,6 +319,9 @@ class BuildMode:
         if not self.brush:
             return
         gx, gy = self.cur
+        if F.CAT[self.brush]["layer"] == "top":
+            self._place_top()
+            return
         sox, soy = self.snap_offset(self.brush, gx, gy, self.rot)
         if not self.can_place(self.brush, gx, gy, self.rot, off=(sox, soy)):
             # a blocked snap may still fit un-snapped (e.g. a row of chairs)
@@ -322,13 +335,6 @@ class BuildMode:
             self.msg = "Not enough gold!"
             self.g.audio.play("ui_move")
             return
-        if F.CAT[self.brush]["layer"] == "top":     # the corner the mouse aims at
-            slot = self._top_slot(gx, gy)
-            if slot is None:
-                self.msg = "No free spot on that surface"
-                self.g.audio.play("ui_move")
-                return
-            sox, soy = slot
         self._push_undo()
         self.g.gold -= price
         pl = F.Placed(self.brush, gx, gy, self.rot, self.ci, ox=sox, oy=soy,
@@ -341,6 +347,54 @@ class BuildMode:
         self._refresh()
         self.g.audio.play("sell")
         self.msg = f"Placed {F.CAT[self.brush]['label']} (-{price}g)"
+
+    def _place_top(self):
+        """Put the tabletop item in hand down where the ghost shows it."""
+        tgt = self.top_target
+        if tgt is None:
+            tgt = self._top_aim(self.brush, point=(self.cur[0] + 0.5, self.cur[1] + 0.5))
+        sf, x, y, ok, _ = tgt
+        if sf is None:
+            self.msg = "Tabletop decor goes on a table, counter or shelf"
+            self.g.audio.play("ui_move")
+            return
+        if not ok:
+            self.msg = "No room left on that surface"
+            self.g.audio.play("ui_move")
+            return
+        price = F.CAT[self.brush]["price"]
+        if self.g.gold < price:
+            self.msg = "Not enough gold!"
+            self.g.audio.play("ui_move")
+            return
+        self._push_undo()
+        self.g.gold -= price
+        pl = F.Placed(self.brush, 0, 0, self.rot, self.ci, on=_arrives_on(self.brush))
+        TT.set_pos(pl, x, y, sf.h)
+        self.g.world.home_furniture.append(pl)
+        HI.DROP[id(pl)] = pygame.time.get_ticks()
+        self._refresh()
+        self.g.audio.play("sell")
+        self.msg = f"Placed {F.CAT[self.brush]['label']} (-{price}g)"
+        # the next one of the same kind would land on the same spot: re-aim
+        self.top_target = self._top_aim(self.brush, point=(x, y))
+
+    def _nudge_top(self, dx, dy):
+        """Arrow keys fine-move a selected tabletop item (1/16 tile)."""
+        sel = self.selected
+        world = self.g.world
+        surfs = TT.surfaces(world)
+        sf = TT.support_of(sel, surfs)
+        if sf is None:
+            return
+        x, y = TT.pos(sel)
+        others = TT.others_on(sf, world, surfs, ignore=sel)
+        nx, ny, ok, _ = TT.resolve(sf, sel.kind, x + dx * F.TOP_SNAP,
+                                   y + dy * F.TOP_SNAP, others, snap=False)
+        if ok and (abs(nx - x) > 1e-6 or abs(ny - y) > 1e-6):
+            self._push_undo()
+            TT.set_pos(sel, nx, ny, sf.h)
+            self.g.audio.play("ui_move")
 
     def pick_at(self, gx, gy):
         for pl in reversed(self.g.world.home_furniture):
@@ -390,9 +444,10 @@ class BuildMode:
             self.g.gold += refund
             self.g.world.home_furniture.remove(target)
             # tabletop decor left floating (its table was sold) is sold along
+            surfs = TT.surfaces(self.g.world)
             orphans = [q for q in self.g.world.home_furniture
                        if F.CAT[q.kind]["layer"] == "top"
-                       and self._top_support(q.gx, q.gy) is None]
+                       and TT.support_of(q, surfs) is None]
             for q in orphans:
                 self.g.gold += F.CAT[q.kind]["price"] // 2
                 refund += F.CAT[q.kind]["price"] // 2
@@ -408,13 +463,20 @@ class BuildMode:
             self.g.audio.play("ui_move")
 
     def rotate(self):
-        if self.selected:
+        if self.selected and F.CAT[self.selected.kind]["layer"] == "top":
+            self._push_undo()
+            self.selected.rot = (self.selected.rot + 1) % 4
+            HI.DROP[id(self.selected)] = pygame.time.get_ticks()   # a little hop
+        elif self.selected:
             sel = self.selected
             self._push_undo()
+            old_rot = sel.rot
             sel.rot = (sel.rot + 1) % 4
             sel.gx, sel.gy = self._clamp_cell(sel.gx, sel.gy, sel.kind)
             sel.ox, sel.oy = self.snap_offset(
                 sel.kind, sel.gx, sel.gy, sel.rot, ignore=sel)
+            if sel.kind in F.SURFACES:          # its tabletop things turn along
+                TT.carry_on_rotate(self.g.world, sel, old_rot)
             self._refresh()
         else:
             self.rot = (self.rot + 1) % 4
@@ -488,6 +550,8 @@ class BuildMode:
     def handle_event(self, e):
         if e.type == pygame.KEYDOWN:
             if e.key == pygame.K_ESCAPE:
+                HI.LIFT.clear()
+                self.dragging = False
                 if self.brush or self.selected:
                     self.brush = None; self.selected = None
                 else:
@@ -509,6 +573,12 @@ class BuildMode:
                 self.sel = (self.sel + (1 if e.key == pygame.K_e else -1)) % len(items)
                 self.brush = items[self.sel]; self.selected = None
                 self._scroll_to_sel()
+            elif (e.key in (pygame.K_LEFT, pygame.K_RIGHT, pygame.K_UP, pygame.K_DOWN)
+                  and self.selected is not None and not self.brush
+                  and F.CAT[self.selected.kind]["layer"] == "top"):
+                self._nudge_top(*{pygame.K_LEFT: (-1, 0), pygame.K_RIGHT: (1, 0),
+                                  pygame.K_UP: (0, -1), pygame.K_DOWN: (0, 1)}[e.key])
+                return
             elif e.key in (pygame.K_a, pygame.K_LEFT):
                 self.cur = self._clamp_cell(self.cur[0] - 1, self.cur[1], self.brush)
             elif e.key in (pygame.K_d, pygame.K_RIGHT):
@@ -524,8 +594,10 @@ class BuildMode:
                     self.selected = self.pick_at(*self.cur)
             if e.key in (pygame.K_a, pygame.K_LEFT, pygame.K_d, pygame.K_RIGHT,
                          pygame.K_w, pygame.K_UP, pygame.K_s, pygame.K_DOWN):
-                # keep the corner-aim point in step with keyboard cursor moves
+                # keep the aim point in step with keyboard cursor moves
                 self.cur_pt = (self.cur[0] + 0.5, self.cur[1] + 0.5)
+                if self.brush and F.CAT[self.brush]["layer"] == "top":
+                    self.top_target = self._top_aim(self.brush, point=self.cur_pt)
             return
 
         if e.type == pygame.MOUSEMOTION:
@@ -534,42 +606,61 @@ class BuildMode:
                 self.cur_pt = HI.screen_to_point(self.g.world.area, mx, my)
                 cgx, cgy = self._mouse_cell(e.pos)
                 if self.brush and F.CAT[self.brush]["layer"] == "top":
-                    (cgx, cgy), self.cur_pt = self._aim_surface(e.pos)
+                    self.top_target = self._top_aim(self.brush, e.pos)
+                    sf, tx, ty = self.top_target[:3]
+                    cgx, cgy = int(math.floor(tx)), int(math.floor(ty))
+                    self.cur_pt = (tx, ty)
                 self.cur = self._clamp_cell(cgx, cgy, self.brush)
+                self._hover = (self._pick_top(e.pos)
+                               if not self.brush and not self.dragging else None)
                 if self.dragging and self.selected:
                     sel = self.selected
                     if F.CAT[sel.kind]["layer"] == "top":
-                        # tabletop decor hops between FREE corners under the mouse
-                        nx, ny = self._clamp_cell(cgx, cgy, sel.kind)
-                        slot = self._top_slot(nx, ny, ignore=sel)
-                        if slot is not None:
-                            sel.gx, sel.gy = nx, ny
-                            sel.ox, sel.oy = slot
+                        # carried in the hand: glides to the free spot under the
+                        # mouse (sliding round its neighbours), any surface
+                        sf, tx, ty, ok, guides = self._top_aim(sel.kind, e.pos, ignore=sel)
+                        self.top_target = (sf, tx, ty, ok, guides)
+                        if sf is not None and ok:
+                            TT.set_pos(sel, tx, ty, sf.h)
                     else:
                         before = set(sel.cells())
+                        riding = (self._items_riding(sel)
+                                  if sel.kind in F.SURFACES else [])
                         ogx, ogy = sel.gx, sel.gy
                         sel.gx, sel.gy = self._clamp_cell(cgx, cgy, sel.kind)
                         # re-evaluate centre-snap at the new spot (seats only)
                         sel.ox, sel.oy = self.snap_offset(
                             sel.kind, sel.gx, sel.gy, sel.rot, ignore=sel)
                         ddx, ddy = sel.gx - ogx, sel.gy - ogy
-                        if (ddx or ddy) and sel.kind in F.SURFACES:
+                        if ddx or ddy:
                             # tabletop decor rides along with its table
-                            for q in self.g.world.home_furniture:
-                                if (F.CAT[q.kind]["layer"] == "top"
-                                        and (q.gx, q.gy) in before):
-                                    q.gx += ddx
-                                    q.gy += ddy
+                            for q in riding:
+                                q.gx += ddx
+                                q.gy += ddy
                     self._refresh()
             return
 
         if e.type == pygame.MOUSEBUTTONUP and e.button == 1:
+            sel = self.selected
+            if self.dragging and sel is not None and F.CAT[sel.kind]["layer"] == "top":
+                HI.LIFT.pop(id(sel), None)          # set it down with a bounce
+                HI.DROP[id(sel)] = pygame.time.get_ticks()
+                self.g.audio.play("ui_move")
+                self.top_target = None
+            HI.LIFT.clear()                         # nothing stays floating
             self.dragging = False
             return
 
         # scroll the catalogue with the mouse wheel (SDL2 MOUSEWHEEL, or legacy
         # button 4/5).  Only the catalogue scrolls, so apply it regardless of x.
         if e.type == pygame.MOUSEWHEEL:
+            mx, my = pygame.mouse.get_pos()
+            top_in_hand = ((self.brush and F.CAT[self.brush]["layer"] == "top")
+                           or (self.selected is not None and not self.brush
+                               and F.CAT[self.selected.kind]["layer"] == "top"))
+            if mx < PANEL_X and my < BAR_Y and top_in_hand and e.y:
+                self.rotate()                     # Sims-style: wheel turns it
+                return
             self.scroll -= e.y
             self._clamp_scroll()
             return
@@ -649,8 +740,10 @@ class BuildMode:
         self.cur_pt = HI.screen_to_point(self.g.world.area, *pos)
         cgx, cgy = self._mouse_cell(pos)
         if self.brush and F.CAT[self.brush]["layer"] == "top":
-            # aiming at a raised surface: correct the corner point for its lift
-            (cgx, cgy), self.cur_pt = self._aim_surface(pos)
+            # aiming at a raised surface: ray-cast onto its top
+            self.top_target = self._top_aim(self.brush, pos)
+            cgx, cgy = (int(math.floor(self.top_target[1])),
+                        int(math.floor(self.top_target[2])))
         self.cur = self._clamp_cell(cgx, cgy, self.brush)
         # pick what the mouse VISUALLY touches: tabletop item > furniture body
         # > floor-tile fallback (rugs) > wall decor
@@ -668,6 +761,10 @@ class BuildMode:
             self.selected = solid_hit
             self.dragging = True
             self._push_undo()                    # a drag-move is undoable
+            if F.CAT[solid_hit.kind]["layer"] == "top":
+                HI.LIFT[id(solid_hit)] = 7       # picked up: it floats in hand
+                self._drag_from = TT.pos(solid_hit)
+                self.g.audio.play("ui_select")
         else:
             self.selected = hit
             if hit:
@@ -701,7 +798,12 @@ class BuildMode:
             room = card.right - 20 - (gr.right + 24)
             K.blit_text(surf, fm, K.ellipsize(fm, self.msg, room), K.SPROUT,
                         (card.right - 20, y1), align="right")
-        hint = ("Click place  |  R rotate  |  Right-click sell  |  "
+        top_mode = ((self.brush and F.CAT[self.brush]["layer"] == "top")
+                    or (self.selected is not None
+                        and F.CAT[self.selected.kind]["layer"] == "top"))
+        hint = ("Drag to move  |  Wheel/R turn  |  Arrows nudge  |  Shift free place  |  "
+                "Right-click sell  |  Ctrl+Z undo" if top_mode else
+                "Click place  |  R rotate  |  Right-click sell  |  "
                 "Mid/Ctrl+R-click copy  |  Ctrl+Z undo  |  Esc back")
         fh = K.fit_font(hint, card.w - 40, (14, 13, 12), bold=True)
         K.blit_text(surf, fh, hint, K.INK_SOFT, (card.x + 20, y2), align="left")
@@ -747,20 +849,10 @@ class BuildMode:
                          on=True, alpha=170)
             pygame.draw.circle(surf, col, mid, 19, 2)
         elif d["layer"] == "top":
-            sup = self._top_support(gx, gy)
-            base = HI.top_height(sup.kind) if sup else 0
-            slot = self._top_slot(gx, gy)
-            if slot is None:                    # no surface / every corner taken
-                HI.outline(surf, ox, oy, gx, gy, 1, 1, (220, 70, 70), 2,
-                           fill=(220, 70, 70, 70), lift=base)
-                return
-            tx, ty = slot
-            # green pad on the EXACT corner the item will land on
-            HI.outline(surf, ox, oy, gx + 0.5 + tx - 0.24, gy + 0.5 + ty - 0.24,
-                       0.48, 0.48, col, 2, fill=(col[0], col[1], col[2], 80),
-                       lift=base)
-            HI.draw_top_piece(surf, ox, oy, gx + 0.5 + tx, gy + 0.5 + ty,
-                              self.brush, F.PALETTE[self.ci][1], base, alpha=170)
+            if self.top_target is None:
+                self.top_target = self._top_aim(self.brush, point=self.cur_pt)
+            self._draw_top_ghost(surf, self.brush, self.top_target,
+                                 ok_gold=self.g.gold >= d["price"])
         else:
             fw, fh = F.footprint(self.brush, self.rot)
             if ok and self.brush in F.MERGE:
@@ -788,7 +880,93 @@ class BuildMode:
                           F.PALETTE[self.ci][1], alpha=170, rot=self.rot,
                           on=_arrives_on(self.brush))
 
+    def _smooth_ghost(self, x, y, h):
+        """Glide the on-screen ghost toward its target (frame-rate independent),
+        so the item in hand moves like butter instead of hopping."""
+        now = pygame.time.get_ticks()
+        dt = 0.016 if self._ghost_t is None else min(0.1, (now - self._ghost_t) / 1000.0)
+        self._ghost_t = now
+        g = self._ghost
+        if g is None or abs(g[0] - x) + abs(g[1] - y) > 3 or abs(g[2] - h) > 60:
+            self._ghost = [x, y, float(h)]
+        else:
+            k = 1 - math.exp(-dt * 22)
+            g[0] += (x - g[0]) * k
+            g[1] += (y - g[1]) * k
+            g[2] += (h - g[2]) * k
+        return self._ghost
+
+    def _foot_ellipse(self, surf, ox, oy, x, y, r, h, col, width=2, fill=None):
+        pts = [HI.proj(ox, oy, x + math.cos(a) * r, y + math.sin(a) * r)
+               for a in (i * math.pi / 12 for i in range(24))]
+        pts = [(px, py - h) for px, py in pts]
+        if fill is not None:
+            lay = pygame.Surface((surf.get_width(), surf.get_height()), pygame.SRCALPHA)
+            pygame.draw.polygon(lay, fill, pts)
+            surf.blit(lay, (0, 0))
+        pygame.draw.polygon(surf, col, pts, width)
+
+    def _draw_guides(self, surf, ox, oy, guides, h):
+        """Dashed magnet lines on the surface top (alignment helpers)."""
+        for axis, v, a, b in guides:
+            if axis == "x":
+                p0, p1 = HI.proj(ox, oy, v, a - 0.15), HI.proj(ox, oy, v, b + 0.15)
+            else:
+                p0, p1 = HI.proj(ox, oy, a - 0.15, v), HI.proj(ox, oy, b + 0.15, v)
+            p0, p1 = (p0[0], p0[1] - h), (p1[0], p1[1] - h)
+            n = max(2, int(math.hypot(p1[0] - p0[0], p1[1] - p0[1]) / 5))
+            for i in range(0, n, 2):
+                t0, t1 = i / n, min(1.0, (i + 1) / n)
+                pygame.draw.line(surf, (255, 236, 150),
+                                 (p0[0] + (p1[0] - p0[0]) * t0, p0[1] + (p1[1] - p0[1]) * t0),
+                                 (p0[0] + (p1[0] - p0[0]) * t1, p0[1] + (p1[1] - p0[1]) * t1), 2)
+
+    def _draw_top_ghost(self, surf, kind, tgt, ok_gold=True, held=None):
+        """The tabletop item in hand: floating above the exact landing spot
+        with a soft shadow + footprint ring (green / red), magnet guides, and
+        a gentle bob -- smoothly following the mouse."""
+        area = self.g.world.area
+        ox, oy = HI.origin(area)
+        sf, x, y, ok, guides = tgt
+        ok = ok and ok_gold
+        col = (70, 210, 90) if ok else (220, 70, 70)
+        r = F.top_radius(kind)
+        h = sf.h if sf is not None else 0
+        gx_, gy_, gh = self._smooth_ghost(x, y, h)
+        self._foot_ellipse(surf, ox, oy, x, y, r, h, col, 2,
+                           fill=(col[0], col[1], col[2], 70))
+        if sf is not None and guides:
+            self._draw_guides(surf, ox, oy, guides, h)
+        if held is None:
+            bob = 7 + math.sin(pygame.time.get_ticks() / 180.0) * 1.5
+            # soft contact shadow where it will land
+            sh = pygame.Surface((surf.get_width(), surf.get_height()), pygame.SRCALPHA)
+            c = HI.proj(ox, oy, x, y)
+            rr = 6 + r * 34
+            pygame.draw.ellipse(sh, (20, 16, 30, 70), (c[0] - rr, c[1] - h - rr / 2, 2 * rr, rr))
+            surf.blit(sh, (0, 0))
+            HI.draw_top_piece(surf, ox, oy, gx_, gy_, kind, F.PALETTE[self.ci][1],
+                              gh + bob, alpha=200 if ok else 130, rot=self.rot,
+                              on=_arrives_on(kind))
+
+    def _draw_hover(self, surf):
+        """Mouse over a tabletop item (nothing in hand): a soft glow ring says
+        'click to pick me up'."""
+        q = self._hover
+        if q is None or q not in self.g.world.home_furniture or self.dragging:
+            return
+        area = self.g.world.area
+        ox, oy = HI.origin(area)
+        sf = TT.support_of(q, TT.surfaces(self.g.world))
+        h = sf.h if sf else 0
+        x, y = TT.pos(q)
+        t = pygame.time.get_ticks() / 250.0
+        a = 150 + int(60 * math.sin(t))
+        self._foot_ellipse(surf, ox, oy, x, y, F.top_radius(q.kind) + 0.03, h,
+                           (255, 236, 150), 2, fill=(255, 236, 150, a // 4))
+
     def _draw_selection(self, surf):
+        self._draw_hover(surf)
         if not self.selected:
             return
         area = self.g.world.area
@@ -798,12 +976,15 @@ class BuildMode:
             mid = HI.wall_anchor(ox, oy, area, pl.gx, pl.gy)
             pygame.draw.circle(surf, ACCENT, mid, 20, 3)
         elif F.CAT[pl.kind]["layer"] == "top":
-            # quarter-pad highlight on the item's own corner, up on the table
-            sup = self._top_support(pl.gx, pl.gy)
-            lift = HI.top_height(sup.kind) if sup else 0
-            HI.outline(surf, ox, oy, pl.gx + 0.5 + pl.ox - 0.24,
-                       pl.gy + 0.5 + pl.oy - 0.24, 0.48, 0.48, ACCENT, 3,
-                       lift=lift)
+            # a ring round the item's own footprint, up on its surface; while
+            # carried, the landing ring + magnet guides instead
+            if self.dragging and self.top_target is not None:
+                self._draw_top_ghost(surf, pl.kind, self.top_target, held=pl)
+                return
+            sf = TT.support_of(pl, TT.surfaces(self.g.world))
+            x, y = TT.pos(pl)
+            self._foot_ellipse(surf, ox, oy, x, y, F.top_radius(pl.kind) + 0.02,
+                               sf.h if sf else 0, ACCENT, 3)
         else:
             fw, fh = F.footprint(pl.kind, pl.rot)
             HI.outline(surf, ox, oy, pl.gx + pl.ox, pl.gy + pl.oy, fw, fh,

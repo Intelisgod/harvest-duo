@@ -124,21 +124,13 @@ SURFACE_INSET = 0.07
 # stay this far inside the surface edge. Unlisted kinds use TOP_RADIUS_DEFAULT.
 TOP_RADIUS = {
     "paper_stack": 0.16, "music_sheet": 0.15, "book_stack": 0.14,
-    "fruit_bowl": 0.13, "desk_mirror": 0.11, "photo_frame": 0.10,
+    "fruit_bowl": 0.13, "desk_mirror": 0.13, "photo_frame": 0.13,
     "desk_lamp": 0.10, "vase_flowers": 0.09, "pen_holder": 0.08,
     "candle_small": 0.07, "coffee_mug": 0.07, "cactus_small": 0.07,
 }
 TOP_RADIUS_DEFAULT = 0.11
 # how fine free placement snaps (tiles); Shift in Build mode = no snapping
 TOP_SNAP = 0.0625
-
-
-# (legacy quarter-cell slots -- kept until Build's free placement lands)
-TOP_SLOTS = ((-0.22, -0.22), (0.22, -0.22), (-0.22, 0.22), (0.22, 0.22))
-
-
-def surface_slots(kind):
-    return TOP_SLOTS
 
 
 def top_radius(kind):

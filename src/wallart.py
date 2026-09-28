@@ -263,12 +263,14 @@ def _window(W, color, sky):
     W.slab(0.07, 0.93, z0 - 4, z0, 0, 0.17, trim)                          # sill
 
 
-def _wall_shelf(W, color):
+def _wall_shelf(W, color, bare=False):
     W.shadow(W.rect_pts(0.08, 0.92, 30, 37, 0), a=64, dz=-4)
     for bu in (0.20, 0.76):                                  # brackets (wedges)
         W.poly(_dk(color, 0.62), [(bu, 0, 34), (bu, 0.2, 34), (bu, 0, 26)])
         W.poly(_dk(color, 0.45), [(bu, 0, 34), (bu, 0.2, 34), (bu, 0, 26)], 1)
     W.slab(0.08, 0.92, 34, 37, 0, 0.30, color)
+    if bare:                                  # the player's own things live here
+        return
     items = [  # (u0, u1, d0, d1, z-height, colour) -- books + a plant pot
         (0.14, 0.20, 0.05, 0.25, 11, (196, 76, 76)),
         (0.20, 0.26, 0.05, 0.25, 9, (84, 126, 196)),
@@ -389,10 +391,13 @@ def _generic(W, color):
 
 
 # ------------------------------------------------------------------ API
-def sprite(kind, color, side, on=True, sky=("day", "sunny")):
-    """Cached local sprite of one wall piece (see ORG for its anchor)."""
+def sprite(kind, color, side, on=True, sky=("day", "sunny"), bare=False):
+    """Cached local sprite of one wall piece (see ORG for its anchor).
+    `bare`: a wall shelf without its built-in clutter (the player's decor
+    stands on it instead)."""
     color = tuple(color[:3])
-    key = (kind, color, side, bool(on), sky if kind == "window" else None)
+    key = (kind, color, side, bool(on), sky if kind == "window" else None,
+           bool(bare) and kind == "wall_shelf")
     s = _cache.get(key)
     if s is None:
         s = pygame.Surface((SPR_W, SPR_H), pygame.SRCALPHA)
@@ -404,7 +409,7 @@ def sprite(kind, color, side, on=True, sky=("day", "sunny")):
         elif kind == "window":
             _window(W, color, sky)
         elif kind == "wall_shelf":
-            _wall_shelf(W, color)
+            _wall_shelf(W, color, bare)
         elif kind == "wall_lamp":
             _wall_lamp(W, color, on)
         elif kind == "wall_mirror":
@@ -420,11 +425,11 @@ def sprite(kind, color, side, on=True, sky=("day", "sunny")):
 
 
 def blit(scr, foot, kind, color, side, on=True, sky=("day", "sunny"), minutes=None,
-         alpha=255):
+         alpha=255, bare=False):
     """Draw a wall piece whose wall cell starts at screen point `foot` (the
     cell's floor-level corner: P(c, 1) on the back wall, P(1, c+1) on the
     left). `minutes` (game clock) drives a clock's hands."""
-    spr = sprite(kind, color, side, on, sky)
+    spr = sprite(kind, color, side, on, sky, bare)
     top_left = (foot[0] - ORG[0], foot[1] - ORG[1])
     if alpha < 255:
         spr = spr.copy()

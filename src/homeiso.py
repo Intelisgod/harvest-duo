@@ -13,6 +13,7 @@ from .settings import SCREEN_W, SCREEN_H
 from . import furniture as F
 from . import isofurn
 from . import wallart
+from . import tabletop
 from .assets import chars
 
 TW, TH = 64, 32        # iso tile diamond (width, height)
@@ -130,7 +131,7 @@ def draw_grid(scr, ox, oy, area):
 
 
 # ---------------------------------------------------------------- room
-def draw_shell(scr, world, ox, oy, grid=False, sky=None, minutes=None):
+def draw_shell(scr, world, ox, oy, grid=False, sky=None, minutes=None, bare=()):
     """Floor + two walls + (optional) build grid + wall decor. `sky`
     (wallart.sky_key) tints the window glass, `minutes` sets the clock."""
     area = world.areas[world.current] if hasattr(world, "areas") else world.area
@@ -200,7 +201,7 @@ def draw_shell(scr, world, ox, oy, grid=False, sky=None, minutes=None):
         # decor has no power state so it always renders lit
         won = pl.on or pl.kind not in F.TOGGLE
         blit_wall(scr, ox, oy, area, pl.kind, pl.color, pl.gx, pl.gy, on=won,
-                  sky=sky, minutes=minutes)
+                  sky=sky, minutes=minutes, bare=id(pl) in bare)
 
 
 def wall_side(gx, gy):
@@ -209,7 +210,7 @@ def wall_side(gx, gy):
 
 
 def blit_wall(scr, ox, oy, area, kind, color, gx, gy, on=True, alpha=255,
-              sky=None, minutes=None):
+              sky=None, minutes=None, bare=False):
     """Draw one wall piece on its wall cell (the room and Build's ghost)."""
     x0, y0 = 1, 1
     if wall_side(gx, gy) == "back":
@@ -219,7 +220,33 @@ def blit_wall(scr, ox, oy, area, kind, color, gx, gy, on=True, alpha=255,
         c = max(y0, min(area.h - 2, gy))
         foot = proj(ox, oy, x0, c + 1)
     wallart.blit(scr, foot, kind, color, wall_side(gx, gy), on=on,
-                 sky=sky or ("day", "sunny"), minutes=minutes, alpha=alpha)
+                 sky=sky or ("day", "sunny"), minutes=minutes, alpha=alpha,
+                 bare=bare)
+
+
+# ---- tabletop feel: items dropped in Build land with a little bounce, and an
+# item held in the hand floats above its spot (Build sets these) ----
+DROP = {}            # id(item) -> ticks (ms) it was put down
+LIFT = {}            # id(item) -> px it is held above its surface
+
+
+def top_lift(pl):
+    """Extra height (px) for a tabletop item right now: held = floating,
+    just dropped = a quick fall + two small bounces."""
+    k = id(pl)
+    if k in LIFT:
+        return LIFT[k]
+    t0 = DROP.get(k)
+    if t0 is None:
+        return 0
+    t = (pygame.time.get_ticks() - t0) / 1000.0
+    if t >= 0.42:
+        DROP.pop(k, None)
+        return 0
+    if t < 0.14:                                # the fall
+        return int(9 * (1 - t / 0.14) ** 2)
+    t2 = t - 0.14                               # damped bounces
+    return int(abs(math.sin(t2 * 22)) * 3 * math.exp(-t2 * 9))
 
 
 # seat-front distance from the seat centre per kind (tile units): the knees
@@ -415,15 +442,15 @@ def top_height(kind):
     return isofurn.surface_height(kind)
 
 
-def draw_top_piece(scr, ox, oy, x, y, kind, color, base, alpha=255):
+def draw_top_piece(scr, ox, oy, x, y, kind, color, base, alpha=255, rot=0, on=False):
     """Draw one tabletop item (used by the room and the Build ghost)."""
     def Pf(a, b):
         return proj(ox, oy, a, b)
     if alpha >= 255:
-        isofurn.draw_top(scr, Pf, x, y, kind, color, base)
+        isofurn.draw_top(scr, Pf, x, y, kind, color, base, on=on, rot=rot)
     else:
         tmp = pygame.Surface((SCREEN_W, SCREEN_H), pygame.SRCALPHA)
-        isofurn.draw_top(tmp, Pf, x, y, kind, color, base)
+        isofurn.draw_top(tmp, Pf, x, y, kind, color, base, on=on, rot=rot)
         tmp.set_alpha(alpha)
         scr.blit(tmp, (0, 0))
 
@@ -462,8 +489,16 @@ def draw_room(game, build=False, players=True):
     ox, oy = origin(area)
     t = getattr(game, "time", None)
     minutes = getattr(t, "minutes", None)
+    surfs = tabletop.surfaces(world)
+    bare = set()                                 # wall shelves someone decorated
+    for q in world.home_furniture:
+        if F.CAT[q.kind]["layer"] == "top":
+            sp = tabletop.support_of(q, surfs)
+            if sp is not None and sp.wall:
+                bare.add(sp.sid)
     draw_shell(scr, world, ox, oy, grid=build, minutes=minutes,
-               sky=wallart.sky_key(minutes, getattr(game, "weather", None)))
+               sky=wallart.sky_key(minutes, getattr(game, "weather", None)),
+               bare=bare)
 
     def Pf(a, b):
         return proj(ox, oy, a, b)
@@ -552,22 +587,21 @@ def draw_room(game, build=False, players=True):
         if lay in ("wall", "floor"):
             continue
         if lay == "top":
-            # tabletop decor: drawn at its support's top height, depth-keyed a
-            # hair PAST the support so it always paints right after it
-            sup = next((q for q in reversed(world.home_furniture)
-                        if F.CAT[q.kind]["layer"] == "ground"
-                        and q.kind in F.SURFACES and (pl.gx, pl.gy) in q.cells()),
-                       None)
-            base = isofurn.surface_height(sup.kind) if sup else 0
+            # tabletop decor: drawn at its surface's top height, depth-keyed a
+            # hair PAST the surface (and by its own spot among its neighbours)
+            # so it paints right after the piece it stands on
+            sup = tabletop.support_of(pl, surfs)
+            px, py = tabletop.pos(pl)
             if sup:
-                sfw, sfh = F.footprint(sup.kind, sup.rot)
-                dgx, dgy = sup.gx + 0.01, sup.gy + 0.01
+                kx, ky, sfw, sfh = sup.key
+                base = sup.h
+                dgx, dgy = kx + 0.01 + (px + py) * 1e-4, ky + 0.01
             else:
                 sfw = sfh = 1
+                base = 0
                 dgx, dgy = pl.gx, pl.gy
             items.append((dgx, dgy, pl.kind, pl.color, sfw, sfh, "top",
-                          (pl.gx + 0.5 + pl.ox, pl.gy + 0.5 + pl.oy, base,
-                           pl.on), 0))
+                          (px, py, base + top_lift(pl), pl.on, pl.rot), 0))
             continue
         grp = group_of(pl)
         if grp == ():
@@ -618,7 +652,7 @@ def draw_room(game, build=False, players=True):
                                           for op in _sitter_ops(scr, ox, oy, *s)])
         elif lay == "top":
             isofurn.draw_top(scr, Pf, obj[0], obj[1], kind, col, obj[2],
-                             on=obj[3])
+                             on=obj[3], rot=obj[4])
         else:
             onv, sits, cont = obj
             extra = ([op for s in sits for op in _sitter_ops(scr, ox, oy, *s)]
