@@ -103,7 +103,10 @@ def lathe(surf, P, cx, cy, prof, col, asp=1.0, n=24, p=2.0, top=True, outline=Tr
     tiles), ...] bottom -> top; `asp` squashes the y radius, `p` > 2 makes the
     rings rounded squares. Draws a shaded silhouette (lit left, dark right)
     and, with `top`, the lit top cap. Returns the rings (screen points)."""
-    rings = [_ring(P, cx, cy, r, r * asp, z, n, p) for z, r in prof]
+    # a profile entry may carry a centre offset (z, r, dx, dy): rings that
+    # drift sideways as they rise (a bean bag's back, a leaning sack)
+    rings = [_ring(P, cx + (e[2] if len(e) > 2 else 0.0), cy + (e[3] if len(e) > 3 else 0.0),
+                   e[1], e[1] * asp, e[0], n, p) for e in prof]
     arcs = [_arcs(rg) for rg in rings]
     left = [a[0][0] for a in arcs]
     right = [a[0][-1] for a in arcs]
@@ -343,23 +346,24 @@ def _writing_desk(g):
 def _bean_bag(g):
     col = g.color
 
-    def _base():
-        rg = lathe(g.surf, g.P, 0.5, 0.52, [(0, 0.33), (3, 0.41), (7, 0.42), (10, 0.39)],
-                   col, top=False)
-        top = rg[-1]
-        pygame.draw.polygon(g.surf, _lt(col, 1.10), top)
-        dent = _ring(g.P, 0.5, 0.60, 0.25, 0.22, 10)                # the sat-in hollow
-        pygame.draw.polygon(g.surf, _mix(_lt(col, 1.1), col, 0.55), dent)
-        pygame.draw.polygon(g.surf, _dk(col, 0.5), top, 1)
-    g.op(0.08, 0.10, 0.92, 0.94, 0, 10, _base)
+    # one squashy teardrop: a wide seat whose rings drift toward the back
+    # (canonical -y) as they rise into a slumped backrest
+    seat = [(0, 0.34), (3, 0.41), (7, 0.42), (10, 0.40)]
+    rise = [(10, 0.40, 0, -0.02), (14, 0.35, 0, -0.10), (18, 0.29, 0, -0.17),
+            (22, 0.22, 0, -0.21), (24.5, 0.14, 0, -0.23), (25.5, 0.05, 0, -0.24)]
 
-    def _back():
-        lathe(g.surf, g.P, 0.5, 0.22, [(10, 0.40), (15, 0.41), (20, 0.36), (23, 0.26),
-                                       (25, 0.12)], col, asp=0.40, p=2.2, n=32,
-              outline="nobase")
-        a, b = g.S(0.30, 0.17, 23), g.S(0.70, 0.17, 23)             # seam over the top
-        pygame.draw.line(g.surf, _dk(col, 0.7), a, b, 1)
-    g.op(0.10, 0.05, 0.90, 0.38, 10, 25, _back)
+    def _body():
+        lathe(g.surf, g.P, 0.5, 0.52, seat + rise[1:], col, top=False, n=28)
+        dent = _ring(g.P, 0.5, 0.66, 0.23, 0.19, 10)               # the sat-in hollow
+        pygame.draw.polygon(g.surf, _lt(col, 1.06), dent)
+        pygame.draw.lines(g.surf, _dk(col, 0.78), False, _arcs(dent)[1], 1)
+    g.op(0.08, 0.10, 0.92, 0.94, 0, 10, _body)
+    if not g.vy1:
+        # the backrest faces the camera: paint it again OVER an away-facing
+        # sitter (the rest of the bag stays under them)
+        def _back():
+            lathe(g.surf, g.P, 0.5, 0.52, rise, col, top=False, n=28, outline="nobase")
+        g.op(0.10, 0.05, 0.90, 0.38, 10, 25, _back)
 
 
 @_ground("floor_cushion")
@@ -901,8 +905,6 @@ def _bathtub(g):
 
     def _tub():
         prof = [(4, 0.80), (8, 0.92), (15, 0.98), (21, 1.0)]
-        rings = [_ring(g.P, cx, cy, rx * s, ry * s, z, 40, p) for z, s in prof]
-        del rings
         lathe(g.surf, g.P, cx, cy, [(z, rx * s) for z, s in prof], col, asp=ry / rx,
               n=40, p=p, top=False)
         rim = _ring(g.P, cx, cy, rx * 1.03, ry * 1.06, 23, 40, p)
@@ -1034,11 +1036,10 @@ def _toilet(g):
         lathe(g.surf, g.P, cx, cy, [(9, 0.17), (14, 0.22), (17, 0.235)], cer, asp=0.84,
               top=False)
         # the fluffy lid cover in the chosen colour, a little heart on it
-        lid = lathe(g.surf, g.P, cx, cy, [(17, 0.235), (19, 0.235), (20, 0.20)], col,
-                    asp=0.84, top=True)
+        lathe(g.surf, g.P, cx, cy, [(17, 0.235), (19, 0.235), (20, 0.20)], col,
+              asp=0.84, top=True)
         c = g.S(cx + 0.03, cy, 20)
         pygame.draw.polygon(g.surf, _lt(col, 1.3), _heart((c[0], c[1]), 3))
-        del lid
     g.op(0.36, 0.28, 0.84, 0.72, 0, 20, _bowl)
 
 
@@ -1542,8 +1543,7 @@ def _laptop(t):
     body = _mix(t.color, (214, 216, 224), 0.55)
 
     def _keys(tp):
-        kb = t.flat(-0.10, -0.075, 0.10, 0.015, 2, (58, 60, 68))
-        del kb
+        t.flat(-0.10, -0.075, 0.10, 0.015, 2, (58, 60, 68))
         for r in range(3):
             f = -0.06 + r * 0.025
             a, b = t.S(-0.09, f, 2), t.S(0.09, f, 2)
@@ -1619,7 +1619,6 @@ def _teapot_set(t):
     t.box(-0.16, -0.12, 0.16, 0.12, 1, WOOD_LT)                       # tray
 
     def _pot():
-        parts = []
         sp = (0.13, -0.02)
         hd = (-0.12, -0.02)
 
@@ -1787,8 +1786,6 @@ def _perfume_set(t):
     t.op(-0.12, -0.10, 0.12, 0.10, 0, 1, _tray)
     tint = _mix(col, (250, 250, 255), 0.35)
 
-    def _cap(tp):
-        pass
     t.box(-0.09, -0.04, -0.03, 0.02, 9, tint, z0=1)                  # tall square bottle
     t.box(-0.075, -0.025, -0.045, 0.005, 4, GOLD, z0=10)
 
@@ -1871,7 +1868,7 @@ def _lava_lamp(t):
         if t.on:
             _glow(t.surf, t.S(0, 0, 13), 18, _lt(t.color, 1.4), a=60)
         t.lathe(0, 0, [(0, 0.09), (5, 0.06), (6, 0.055)], (170, 174, 186))
-        rg = t.lathe(0, 0, [(6, 0.055), (10, 0.08), (15, 0.07), (20, 0.04)], liquid, top=False)
+        t.lathe(0, 0, [(6, 0.055), (10, 0.08), (15, 0.07), (20, 0.04)], liquid, top=False)
         c = t.S(0, 0, 0)
         tm = _ticks() / 1000.0
         if t.on:
@@ -1883,7 +1880,6 @@ def _lava_lamp(t):
         else:
             pygame.draw.ellipse(t.surf, blob, (c[0] - 3, c[1] - 9, 6, 3))
         pygame.draw.line(t.surf, (255, 255, 255), t.S(-0.02, 0.02, 9), t.S(-0.015, 0.02, 16), 1)
-        del rg
         t.lathe(0, 0, [(20, 0.04), (23, 0.028), (24, 0.015)], (170, 174, 186))
     t.op(-0.09, -0.09, 0.09, 0.09, 0, 24, _fn)
 
@@ -2077,9 +2073,7 @@ def _fish_bowl(t):
 def _dish_rack(t):
     wire = (200, 204, 212)
 
-    def _tray(tp):
-        pass
-    t.box(-0.14, -0.08, 0.14, 0.08, 2, (176, 180, 190), decor=_tray)
+    t.box(-0.14, -0.08, 0.14, 0.08, 2, (176, 180, 190))
 
     def _plates():
         plates = [(-0.10 + k * 0.045, (250, 250, 252) if k % 2 == 0 else _mix(t.color, (255, 255, 255), 0.3))
