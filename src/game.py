@@ -52,7 +52,7 @@ from .systems import (HooksMixin, SaveMixin, ActionsMixin, CombatMixin, FarmMixi
                       ShopMenu, NetMixin, RenderMixin,
                       CoopMixin, WeatherMixin, ProgressMixin, ArtisanMixin,
                       ForageMixin, StoryMixin, WorldMixin, UIMixin, AreaCtxMixin,
-                      HomeMixin, PianoMixin, RecordsMixin)
+                      HomeMixin, PianoMixin, RecordsMixin, HomeLifeMixin)
 from .systems.showpiece_system import ShowpieceMixin
 try:
     # Mist City side-scroller mode (Chat 7 owns src/mistcity/). Optional: the
@@ -76,7 +76,7 @@ class Game(HooksMixin, SaveMixin, ActionsMixin, CombatMixin, FarmMixin, FishingM
            TempleMixin, SocialMixin, ShopMixin, NetMixin, MistMixin,
            CoopMixin, WeatherMixin, ProgressMixin, ArtisanMixin, ForageMixin,
            StoryMixin, WorldMixin, UIMixin, AreaCtxMixin, HomeMixin, PianoMixin,
-           RecordsMixin, ShowpieceMixin, RenderMixin):
+           RecordsMixin, ShowpieceMixin, HomeLifeMixin, RenderMixin):
     """The game controller. Behaviour is supplied by the system mixins above;
     only lifecycle/loop/glue lives directly on this class."""
 

@@ -819,6 +819,10 @@ class HomeMixin:
         show = getattr(self, "_show_client_interact", None)     # ShowpieceMixin
         if show and show(p, fr):
             return True
+        life = getattr(self, "_life_client_interact", None)    # HomeLifeMixin: cat,
+        r = life(p, fr) if life else False                      # aquarium, plants
+        if r is not False:
+            return r
         if fr.kind == "fridge":
             self._open_fridge(1, fr, client=True)
             return True
