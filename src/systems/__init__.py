@@ -32,6 +32,7 @@ from .piano_system import PianoMixin
 from .records_system import RecordsMixin
 from .showpiece_system import ShowpieceMixin
 from .homelife_system import HomeLifeMixin
+from .guitar_system import GuitarMixin
 
 __all__ = [
     "SaveMixin", "ActionsMixin", "CombatMixin", "FarmMixin", "FishingMixin",

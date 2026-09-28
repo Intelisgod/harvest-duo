@@ -879,6 +879,9 @@ class HomeMixin:
         r = life(p, fr) if life else False                      # aquarium, plants
         if r is not False:
             return r
+        gtr = getattr(self, "_guitar_client_interact", None)   # GuitarMixin: guitar stand
+        if gtr and gtr(p, fr):
+            return True
         if fr.kind == "fridge":
             self._open_fridge(1, fr, client=True)
             return True
