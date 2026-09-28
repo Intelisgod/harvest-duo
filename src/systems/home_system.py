@@ -215,6 +215,9 @@ class HomeMixin:
         # the LAN host never pops a screen up for the remote farmer (the client
         # opens its own); fall back to the plain interaction instead
         remote = getattr(self, "net_mode", None) == "host" and idx == 1
+        show = getattr(self, "_show_interact", None)      # ShowpieceMixin: easel, paintings,
+        if show and show(idx, p, fr, remote):             # telescope, arcade cabinet
+            return True
         if kind == "fridge" and not remote:
             self._open_fridge(idx, fr)
             return True
@@ -813,6 +816,9 @@ class HomeMixin:
     def _home_client_interact(self, p, fr):
         """LAN client: open the home screens locally. True = handled here,
         None = let the host run the press (seats), False = not ours."""
+        show = getattr(self, "_show_client_interact", None)     # ShowpieceMixin
+        if show and show(p, fr):
+            return True
         if fr.kind == "fridge":
             self._open_fridge(1, fr, client=True)
             return True

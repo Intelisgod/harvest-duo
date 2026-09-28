@@ -99,6 +99,10 @@ CATALOG = [
     ("desk_lamp",     "Desk Lamp",      1, 1, 35,  "Tabletop", "top"),
     ("cactus_small",  "Mini Cactus",    1, 1, 25,  "Tabletop", "top"),
     ("music_sheet",   "Music Sheet",    1, 1, 15,  "Tabletop", "top"),
+
+    # ---- showpieces (2026-09-28): systems/showpiece_system.py ----
+    ("telescope",      "Telescope",      1, 1, 260, "Decor",   "ground"),
+    ("arcade_cabinet", "Arcade Cabinet", 1, 1, 380, "Decor",   "ground"),
 ]
 CAT = {c[0]: {"label": c[1], "w": c[2], "h": c[3], "price": c[4],
               "cat": c[5], "layer": c[6]} for c in CATALOG}
@@ -162,6 +166,7 @@ SWIVEL_SEATS = {"stool", "bench", "piano_bench"}
 # appliances/lights that toggle on/off with interact (visual state on Placed.on)
 TOGGLE = {"tv", "lamp", "wall_lamp", "desk_lamp", "neon_sign", "fireplace",
           "microwave", "standing_fan", "record_player", "candle_small"}
+TOGGLE.add("arcade_cabinet")        # showpieces: its screen glows while it's on
 
 # ---- merging & centre-snapping ----
 # MERGE kinds placed orthogonally adjacent with the SAME colour fuse into one
@@ -534,6 +539,43 @@ def _draw_base(item_id, color, t=TILE, on=True):
         pygame.draw.rect(s, glow, (9, 12, w - 18, 4), border_radius=2)
         pygame.draw.rect(s, glow, (9, 18, w - 24, 3), border_radius=2)
         pygame.draw.circle(s, glow, (w - 12, 14), 2)
+    elif item_id == "telescope":                                  # showpieces (2026-09-28)
+        brass = (214, 170, 84)
+        top = (w // 2, int(h * 0.60))
+        for fx in (w // 2 - 15, w // 2 + 15, w // 2 + 2):            # tripod
+            pygame.draw.line(s, _dark(wood, 0.8), (fx, h - 4), top, 3)
+        a, b = (int(w * 0.22), int(h * 0.62)), (int(w * 0.84), int(h * 0.18))
+        dx, dy = b[0] - a[0], b[1] - a[1]
+        ln = math.hypot(dx, dy)
+        nx, ny = -dy / ln, dx / ln
+        tube = [(a[0] + nx * 3, a[1] + ny * 3), (b[0] + nx * 5, b[1] + ny * 5),
+                (b[0] - nx * 5, b[1] - ny * 5), (a[0] - nx * 3, a[1] - ny * 3)]
+        pygame.draw.polygon(s, brass, tube)
+        pygame.draw.polygon(s, _dark(brass, 0.6), tube, 1)
+        c0 = (a[0] + dx * 0.8, a[1] + dy * 0.8)
+        pygame.draw.polygon(s, color, [(c0[0] + nx * 5, c0[1] + ny * 5), (b[0] + nx * 5, b[1] + ny * 5),
+                                       (b[0] - nx * 5, b[1] - ny * 5), (c0[0] - nx * 5, c0[1] - ny * 5)])
+        pygame.draw.line(s, _light(brass, 1.3), (a[0] - nx * 1, a[1] - ny * 1),
+                         (c0[0] - nx * 2, c0[1] - ny * 2), 1)
+        pygame.draw.circle(s, (60, 56, 66), top, 3)
+        pygame.draw.line(s, (40, 38, 46), a, (a[0] - dx * 0.1, a[1] - dy * 0.1), 4)   # eyepiece
+    elif item_id == "arcade_cabinet":
+        pygame.draw.rect(s, _dark(color, 0.6), (w // 2 - 13, 4, 26, 7), border_radius=2)  # marquee
+        pygame.draw.rect(s, (255, 222, 236), (w // 2 - 11, 5, 22, 5), border_radius=2)
+        pygame.draw.rect(s, color, (w // 2 - 12, 11, 24, h - 15))                         # body
+        pygame.draw.rect(s, _dark(color, 0.6), (w // 2 - 12, 11, 24, h - 15), 1)
+        pygame.draw.rect(s, (26, 22, 32), (w // 2 - 9, 13, 18, 14), border_radius=2)       # screen
+        pygame.draw.rect(s, (58, 34, 84), (w // 2 - 7, 15, 14, 10))
+        pygame.draw.line(s, (255, 190, 220), (w // 2 - 5, 17), (w // 2 - 5, 21), 1)
+        pygame.draw.line(s, (255, 190, 220), (w // 2 + 5, 18), (w // 2 + 5, 22), 1)
+        pygame.draw.circle(s, (255, 110, 160), (w // 2 + 1, 19), 1)
+        pygame.draw.rect(s, _dark(color, 0.55), (w // 2 - 15, 28, 30, 5), border_radius=2)  # panel
+        pygame.draw.circle(s, (226, 70, 80), (w // 2 - 7, 28), 2)
+        pygame.draw.circle(s, (255, 120, 170), (w // 2 + 4, 30), 2)
+        pygame.draw.circle(s, (250, 214, 110), (w // 2 + 9, 30), 2)
+        pygame.draw.rect(s, _dark(color, 0.62), (w // 2 - 5, 36, 10, 7))                  # coin door
+        pygame.draw.rect(s, (255, 170, 80), (w // 2 - 3, 38, 2, 3))
+        pygame.draw.rect(s, (255, 170, 80), (w // 2 + 1, 38, 2, 3))
     else:
         pygame.draw.rect(s, color, (5, 5, w - 10, h - 10), border_radius=4)
     return s

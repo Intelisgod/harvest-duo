@@ -204,6 +204,27 @@ def _painting(W, color):
     W.poly((255, 246, 220), [(0.19, 0.07, 56), (0.27, 0.07, 56)], 1)      # gilt glint
 
 
+def _painting_art(W, color, art):
+    """A Painting showing a gallery artwork (studio pixel art, 1 art pixel =
+    1 screen column) in a slightly larger gilt frame. False = not art."""
+    frame = (158, 112, 64)
+    fr = W.rect_pts(0.07, 0.93, 26, 62, 0)
+    W.shadow(fr)
+    W.slab(0.07, 0.93, 26, 62, 0, 0.06, frame)
+    d = 0.06
+    W.poly((250, 246, 236), W.rect_pts(0.105, 0.895, 30, 58, d))              # the mat
+    from . import studio
+    u0, u1, z0, z1 = 0.125, 0.875, 32, 56
+    if not studio.draw_on_face(W.s, W.L(u0, d, z1), W.L(u1, d, z1), W.L(u0, d, z0), art):
+        return False
+    W.poly(_dk(frame, 0.55), [(0.105, d, 58), (0.895, d, 58)], 1)              # inner bevel
+    W.poly(_dk(frame, 0.55), [(0.105, d, 58), (0.105, d, 30)], 1)
+    W.poly(_lt(frame, 1.35), [(0.105, d, 30), (0.895, d, 30)], 1)
+    W.poly((236, 200, 110), W.rect_pts(0.44, 0.56, 27, 28.6, d + 0.004))        # brass plaque
+    W.poly((255, 246, 220), [(0.09, d, 60), (0.19, d, 60)], 1)                 # gilt glint
+    return True
+
+
 def _clock(W, color):
     rim = W.oval_pts(0.5, 43, 12, 12, 0)
     W.shadow(rim)
@@ -391,18 +412,41 @@ def _generic(W, color):
 
 
 # ------------------------------------------------------------------ API
-def sprite(kind, color, side, on=True, sky=("day", "sunny"), bare=False):
+# optional lookup: fn(kind, side, foot) -> the art string (studio.encode) a
+# piece shows, or None -- set by systems/showpiece_system.py so a Painting can
+# display a gallery artwork painted at the easel
+ART_FOR = None
+
+
+def _art_for(kind, side, foot):
+    if ART_FOR is None or kind != "painting":
+        return None
+    try:
+        return ART_FOR(kind, side, foot)
+    except Exception:
+        from .systems import hooks as _hooks    # logged / strict like any hook
+        _hooks._log_hook_error("_show_wall_art")
+        if _hooks._STRICT:
+            raise
+        return None
+
+
+def sprite(kind, color, side, on=True, sky=("day", "sunny"), bare=False, art=None):
     """Cached local sprite of one wall piece (see ORG for its anchor).
     `bare`: a wall shelf without its built-in clutter (the player's decor
-    stands on it instead)."""
+    stands on it instead). `art`: a gallery artwork a Painting shows."""
     color = tuple(color[:3])
     key = (kind, color, side, bool(on), sky if kind == "window" else None,
-           bool(bare) and kind == "wall_shelf")
+           bool(bare) and kind == "wall_shelf", art)
     s = _cache.get(key)
     if s is None:
         s = pygame.Surface((SPR_W, SPR_H), pygame.SRCALPHA)
         W = _Wall(s, side)
-        if kind == "painting":
+        if kind == "painting" and art:
+            if not _painting_art(W, color, art):
+                s.fill((0, 0, 0, 0))
+                _painting(W, color)
+        elif kind == "painting":
             _painting(W, color)
         elif kind == "clock":
             _clock(W, color)
@@ -429,7 +473,7 @@ def blit(scr, foot, kind, color, side, on=True, sky=("day", "sunny"), minutes=No
     """Draw a wall piece whose wall cell starts at screen point `foot` (the
     cell's floor-level corner: P(c, 1) on the back wall, P(1, c+1) on the
     left). `minutes` (game clock) drives a clock's hands."""
-    spr = sprite(kind, color, side, on, sky, bare)
+    spr = sprite(kind, color, side, on, sky, bare, art=_art_for(kind, side, foot))
     top_left = (foot[0] - ORG[0], foot[1] - ORG[1])
     if alpha < 255:
         spr = spr.copy()

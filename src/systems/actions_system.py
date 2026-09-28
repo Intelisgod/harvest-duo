@@ -54,6 +54,8 @@ FURN_ACTION = {
     "neon_sign": ("bask in the neon glow", 5),
     "window": ("gaze out the window", 5), "wall_shelf": ("rearrange the shelf", 4),
     "wall_lamp": ("switch the wall lamp", 3),
+    # showpieces (2026-09-28, systems/showpiece_system.py)
+    "telescope": ("gaze at the stars", 10), "arcade_cabinet": ("play a round of Heart Pong", 14),
 }
 
 # anniversary cabana timing (real seconds): how long a player's "ready" press stays
