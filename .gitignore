@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# local saves / settings (these live in %APPDATA%\HarvestDuo, but ignore any local copies too)
+savegame.json
+savegame.bak
+savegame.tmp
+savegame.corrupt
+savegame_error.txt
+settings.json
+.migrated
+
+# build output
+build/
+dist/
+*.spec
+
+# OS junk
+Thumbs.db
+.DS_Store
+
+# personal gift files: NEVER in the public repo (shipped once in the zip instead)
+memories/
+anniversary.html
+Anniversary-Surprise.zip
+HarvestDuo_for_girlfriend.zip
+
+# updater bookkeeping
+.version
+*.new/
+*.old/
