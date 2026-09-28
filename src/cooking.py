@@ -129,7 +129,7 @@ class CookingMenu:
         self.p = player
         self.sel = 0
         self.items = list(RECIPES.keys())
-        self.msg = "Cook food to restore energy & health."
+        self.msg = "Cooks with both bags AND the fridge."
 
     def move(self, d):
         self.sel = (self.sel + d) % len(self.items)
@@ -143,9 +143,11 @@ class CookingMenu:
             self.msg = "Cooking... (sent to host)"
             return
         need = RECIPES[fid]
-        if all(self.g._count_all(i) >= q for i, q in need.items()):
+        count = getattr(self.g, "_kitchen_count", None) or self.g._count_all
+        remove = getattr(self.g, "_kitchen_remove", None) or self.g._remove_all
+        if all(count(i) >= q for i, q in need.items()):
             for i, q in need.items():
-                self.g._remove_all(i, q)
+                remove(i, q)
             self.p.inv.add(fid, 1)
             self.g.audio.play("harvest")
             self.msg = f"Cooked {FOODS[fid]['label']}!"
@@ -225,7 +227,8 @@ class CookingMenu:
                 col = tuple(int(v * 0.6) for v in BUFF_COLOR.get(kind, GOLD))
                 K.blit_text(surf, f_sub, bt, col, (sr.right + 10, r.y + 34), align="left")
             need = RECIPES[fid]
-            afford = all(self.g._count_all(it) >= q for it, q in need.items())
+            count = getattr(self.g, "_kitchen_count", None) or self.g._count_all
+            afford = all(count(it) >= q for it, q in need.items())
             txt = "   ".join(f"{q} {label(it)}" for it, q in need.items())
             K.blit_text(surf, f_ing, txt, K.INK_SOFT if afford else K.WARN,
                         (r.right - 16, r.centery), align="right")

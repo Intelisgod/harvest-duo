@@ -67,6 +67,9 @@ class ActionsMixin:
     """Interaction dispatch (player_action) and tool use (use_tool)."""
 
     def interact_furniture(self, p, fr):
+        home = getattr(self, "_home_interact", None)     # HomeMixin: fridge, TV,
+        if home and home(p, fr):                         # wardrobe, clock, books...
+            return
         if fr.kind == "workbench":                       # functional: opens upgrades
             self.craft = craft.UpgradeMenu(self, p)
             self.state = "craft"
@@ -107,13 +110,22 @@ class ActionsMixin:
         if fr.kind in furniture.SEATS:                   # actually SIT on it
             verb, gain = FURN_ACTION.get(fr.kind, ("sit down", 6))
             gain = int(gain * getattr(fr, "level", 1))
-            p.energy = min(MAX_ENERGY, p.energy + gain)
             # nearest seat spot on the piece's VISUAL footprint (includes the
             # half-tile centre-snap offset, so a snapped piano bench seats you
             # dead centre, not on a grid cell beside it)
             fw, fh = furniture.footprint(fr.kind, fr.rot)
             spots = [(fr.gx + fr.ox + i + 0.5, fr.gy + fr.oy + j + 0.5)
                      for i in range(fw) for j in range(fh)]
+            # a spot the partner already sits on is taken (sofas have two)
+            taken = [o.sitting for o in self.players
+                     if o is not p and getattr(o, "sitting", None) and o.sitting[0] is fr]
+            spots = [s for s in spots
+                     if all(abs(s[0] - t[1]) > 0.3 or abs(s[1] - t[2]) > 0.3 for t in taken)]
+            if not spots:
+                self.audio.play("ui_move")
+                say = getattr(self, "_home_seat_say", None)
+                (say or (lambda _p, t: self.ui.log(t)))(p, f"{p.name}: that seat is taken!")
+                return
             sx, sy = min(spots, key=lambda s: (s[0] - p.x / TILE) ** 2
                          + (s[1] - p.y / TILE) ** 2)
             # seats with a backrest always face the way the seat points;
@@ -127,6 +139,7 @@ class ActionsMixin:
                            for q in self.world.home_furniture):
                         f = (dx, dy)
                         break
+            p.energy = min(MAX_ENERGY, p.energy + gain)
             p.fx, p.fy = f                               # turn the sprite too
             # Stardew-style micro-offset: camera-facing sitters slide a touch
             # forward on the cushion; everyone else sits dead centre (nudging
@@ -134,8 +147,10 @@ class ActionsMixin:
             nud = 0.06 if f == (0, 1) else 0.0
             p.sitting = (fr, sx, sy + nud)
             self.audio.play("ui_select")
-            self.ui.log(f"{p.name}: {verb} (+{gain} energy) — move or press "
-                        "action to stand up")
+            hint = getattr(self, "_home_seat_hint", None)
+            how = hint(p) if hint else "move or press action to stand up"
+            say = getattr(self, "_home_seat_say", None)
+            (say or (lambda _p, t: self.ui.log(t)))(p, f"{p.name}: {verb} (+{gain} energy) — {how}")
             return
         if fr.kind in furniture.TOGGLE:                  # power on/off
             grp = [fr]
@@ -348,11 +363,16 @@ class ActionsMixin:
         area = self.world.area
         pgx, pgy = int(p.x // TILE), int(p.y // TILE)
 
-        # sitting? any action press just stands you back up
+        # sitting? any action press just stands you back up (unless a TV in the
+        # room is on: then you watch it from the seat -- HomeMixin)
         if getattr(p, "sitting", None):
+            seat_act = getattr(self, "_home_seat_action", None)
+            if seat_act and seat_act(idx, p):
+                return
             p.sitting = None
             self.audio.play("ui_move")
-            self.ui.log(f"{p.name} stands up.")
+            say = getattr(self, "_home_seat_say", None)
+            (say or (lambda _p, t: self.ui.log(t)))(p, f"{p.name} stands up.")
             return
 
         # 0a) fishing wins over every interaction: casting toward water, or any
@@ -500,6 +520,9 @@ class ActionsMixin:
         #    the bed itself falls through to the sleep branch below.
         if area.name == AREA_HOME:
             facing = self.world.furniture_at(*p.target_tile())
+            if facing is None:                   # a wall lamp / window beside the
+                near = getattr(self, "_home_wall_near", None)   # tile you face
+                facing = near(*p.target_tile()) if near else None
             fr = facing or self.world.furniture_at(pgx, pgy)
             if fr:
                 if fr.kind == "bed":             # facing any bed cell (any rotation)

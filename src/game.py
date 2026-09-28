@@ -51,7 +51,8 @@ from .systems import (HooksMixin, SaveMixin, ActionsMixin, CombatMixin, FarmMixi
                       FishingMixin, TempleMixin, SocialMixin, ShopMixin,
                       ShopMenu, NetMixin, RenderMixin,
                       CoopMixin, WeatherMixin, ProgressMixin, ArtisanMixin,
-                      ForageMixin, StoryMixin, WorldMixin, UIMixin, AreaCtxMixin)
+                      ForageMixin, StoryMixin, WorldMixin, UIMixin, AreaCtxMixin,
+                      HomeMixin, PianoMixin, RecordsMixin)
 try:
     # Mist City side-scroller mode (Chat 7 owns src/mistcity/). Optional: the
     # game must boot and run fine before that folder lands.
@@ -73,7 +74,8 @@ DEFAULT_LOOK = [
 class Game(HooksMixin, SaveMixin, ActionsMixin, CombatMixin, FarmMixin, FishingMixin,
            TempleMixin, SocialMixin, ShopMixin, NetMixin, MistMixin,
            CoopMixin, WeatherMixin, ProgressMixin, ArtisanMixin, ForageMixin,
-           StoryMixin, WorldMixin, UIMixin, AreaCtxMixin, RenderMixin):
+           StoryMixin, WorldMixin, UIMixin, AreaCtxMixin, HomeMixin, PianoMixin,
+           RecordsMixin, RenderMixin):
     """The game controller. Behaviour is supplied by the system mixins above;
     only lifecycle/loop/glue lives directly on this class."""
 
@@ -508,6 +510,8 @@ class Game(HooksMixin, SaveMixin, ActionsMixin, CombatMixin, FarmMixin, FishingM
             # a player action bound to B / I (old settings) wins over the hotkey
             bound = any(key == c for K in (P1_KEYS, P2_KEYS) for c in K.values())
             if key == BUILD_KEY and self.world.current == AREA_HOME and not bound:
+                for p in self.players:          # pieces may move: everyone stands up
+                    p.sitting = None
                 self.state = "build"
                 self.audio.play("ui_select")
                 return
@@ -690,8 +694,11 @@ class Game(HooksMixin, SaveMixin, ActionsMixin, CombatMixin, FarmMixin, FishingM
             sit = getattr(p, "sitting", None)
             if sit:
                 # seat sold/moved or we left the house -> quietly stand up
+                fw_, fh_ = F.footprint(sit[0].kind, sit[0].rot)
+                sx0, sy0 = sit[0].gx + sit[0].ox, sit[0].gy + sit[0].oy
                 if (self.world.current != _HOME
-                        or not any(q is sit[0] for q in self.world.home_furniture)):
+                        or not any(q is sit[0] for q in self.world.home_furniture)
+                        or not (sx0 <= sit[1] <= sx0 + fw_ and sy0 <= sit[2] <= sy0 + fh_)):
                     p.sitting = None
                 else:
                     keys = P1_KEYS if i == 0 else P2_KEYS

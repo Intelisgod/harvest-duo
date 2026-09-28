@@ -254,6 +254,14 @@ class Particles:
                                         random.uniform(1.4, 2.4), c,
                                         random.uniform(2, 4), grav=120))
 
+    def note_float(self, x, y, color=(120, 90, 200)):
+        """A little music note (quaver) swaying upward -- record player, piano."""
+        self.items.append(Particle(x + random.uniform(-4, 4), y,
+                                   random.uniform(-9, 9), random.uniform(-30, -18),
+                                   random.uniform(1.3, 2.0), color,
+                                   random.choice((7, 8)), grav=-4.0, shape="note",
+                                   sway=14.0))
+
     def heart_float(self, x, y, color=(255, 130, 165)):
         """A single soft heart drifting gently upward -- the 'special' aura that
         marks the anniversary cabana so players notice it (spawned continuously)."""
@@ -377,6 +385,8 @@ def _sprite(shape, r, col):
         pygame.draw.circle(s, rgb, (c, c), max(1, r - 1))
         pygame.draw.circle(s, (255, 240, 170), (c - max(1, r // 3), c - max(1, r // 3)),
                            max(1, r // 3))
+    elif shape == "note":
+        s = _note_surface(r, rgb)
     elif shape == "petal":
         s = pygame.Surface((r * 2 + 2, r + 2), pygame.SRCALPHA)
         pygame.draw.ellipse(s, rgb, (1, 1, r * 2, r))
@@ -387,6 +397,22 @@ def _sprite(shape, r, col):
         pygame.draw.circle(s, rgb + (150,), (r + 1, r + 1), r)
         pygame.draw.circle(s, rgb + (205,), (r + 1, r + 1), max(1, int(r * 0.6)))
     _SPR[key] = s
+    return s
+
+
+def _note_surface(r, rgb):
+    """A quaver: round head, stem, little flag, dark outline so it reads on
+    any floor or wall."""
+    w, h = r * 2 + 5, r * 3 + 4
+    s = pygame.Surface((w, h), pygame.SRCALPHA)
+    ink = tuple(max(0, int(v * 0.45)) for v in rgb)
+    hx, hy = r + 1, h - r - 1                      # note head centre
+    sx = hx + r - 1                                # stem on the head's right
+    for col, grow in ((ink, 1), (rgb, 0)):
+        pygame.draw.ellipse(s, col, (hx - r - grow, hy - int(r * 0.8) - grow,
+                                     r * 2 + grow * 2, int(r * 1.6) + grow * 2))
+        pygame.draw.line(s, col, (sx, hy), (sx, 1), 2 + grow)
+        pygame.draw.line(s, col, (sx, 1), (min(w - 1, sx + r), r + 1), 2 + grow)
     return s
 
 

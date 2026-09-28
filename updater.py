@@ -79,6 +79,12 @@ def main():
     if "USERNAME/REPO" in REPO:
         _log("repo ยังไม่ถูกตั้งค่า — ข้ามอัปเดต (เล่นเวอร์ชันในเครื่อง)")
         return
+    if os.path.exists(os.path.join(HERE, ".git")):
+        # the developer's own checkout: never overwrite work-in-progress with the
+        # GitHub copy (it would wipe uncommitted/new files). Players install from
+        # the zip, which has no .git, so they still auto-update.
+        _log("โฟลเดอร์นักพัฒนา (มี .git) — ข้ามอัปเดตอัตโนมัติ")
+        return
     try:
         _log("กำลังตรวจเวอร์ชันล่าสุด...")
         try:

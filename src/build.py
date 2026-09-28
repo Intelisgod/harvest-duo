@@ -25,6 +25,14 @@ ITEM_PITCH = 54                     # row stride
 # bottom bar only spans the room side)
 VIS = (SCREEN_H - 20 - ITEM_TOP) // ITEM_PITCH
 TAB_COLS = 3                        # catalogue tabs: two rows of three, every label fits
+# the record player is a remote for this PC's Spotify: a new one arrives OFF
+# (switching it on is what starts the music), unlike the lights/appliances
+_ARRIVE_OFF = {"record_player"}
+
+
+def _arrives_on(kind):
+    """Is a freshly bought ``kind`` placed switched on?"""
+    return kind in F.TOGGLE and kind not in _ARRIVE_OFF
 
 
 class BuildMode:
@@ -324,7 +332,7 @@ class BuildMode:
         self._push_undo()
         self.g.gold -= price
         pl = F.Placed(self.brush, gx, gy, self.rot, self.ci, ox=sox, oy=soy,
-                      on=self.brush in F.TOGGLE)   # appliances arrive switched on
+                      on=_arrives_on(self.brush))  # appliances arrive switched on
         # rugs go to the bottom so they render under everything
         if F.CAT[self.brush]["layer"] == "floor":
             self.g.world.home_furniture.insert(0, pl)
@@ -774,13 +782,13 @@ class BuildMode:
                     HI.draw_group_piece(surf, ox, oy, self.brush,
                                         F.PALETTE[self.ci][1],
                                         F.group_cells(grp), grot, alpha=150,
-                                        on=self.brush in F.TOGGLE)
+                                        on=_arrives_on(self.brush))
                     return
             HI.outline(surf, ox, oy, gx + sox, gy + soy, fw, fh, col, 2,
                        fill=(col[0], col[1], col[2], 70))
             HI.draw_piece(surf, ox, oy, gx + sox, gy + soy, fw, fh, self.brush,
                           F.PALETTE[self.ci][1], alpha=170, rot=self.rot,
-                          on=self.brush in F.TOGGLE)
+                          on=_arrives_on(self.brush))
 
     def _draw_selection(self, surf):
         if not self.selected:

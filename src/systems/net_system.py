@@ -275,6 +275,9 @@ class NetMixin:
             if f:
                 f(1)
         elif ev == "action":
+            seat = getattr(self, "_home_overlay_seat", None)
+            if seat and seat(p):                  # sit down / stand up beside P1's screen
+                return
             entry = p.inv.selected_entry() if p.inv else None
             if not entry or entry[0] != "tool":
                 return
@@ -349,7 +352,10 @@ class NetMixin:
         elif mm == "sleep":
             self._net_sleep_op()
         elif mm == "furn":
-            self._net_furn_op(m.get("kind", ""), m.get("gx"), m.get("gy"), buyer=1)
+            self._net_furn_op(m.get("kind", ""), m.get("gx"), m.get("gy"), buyer=1,
+                              on=m.get("on"))
+        elif isinstance(mm, str):
+            self._first_hook("_net_menu_", mm, m)       # domain ops (fridge, outfit...)
 
     def _net_cook_op(self, fid, buyer=1):
         from .. import cooking
@@ -357,9 +363,11 @@ class NetMixin:
             return
         p = self.players[buyer]
         need = cooking.RECIPES[fid]
-        if all(self._count_all(i) >= q for i, q in need.items()):
+        count = getattr(self, "_kitchen_count", None) or self._count_all
+        remove = getattr(self, "_kitchen_remove", None) or self._remove_all
+        if all(count(i) >= q for i, q in need.items()):
             for i, q in need.items():
-                self._remove_all(i, q)
+                remove(i, q)
             p.inv.add(fid, 1)
             self.audio.play("harvest")
             self.parts.sparkle(p.x, p.y - 10, n=10, color=(255, 210, 140))
@@ -450,12 +458,14 @@ class NetMixin:
             return                                # already asleep / on the report
         self.request_sleep(1)                     # both at home -> the day ends
 
-    def _net_furn_op(self, kind, gx=None, gy=None, buyer=1):
+    def _net_furn_op(self, kind, gx=None, gy=None, buyer=1, on=None):
         from ..settings import MAX_ENERGY
         from .actions_system import FURN_ACTION
         from .. import furniture
         p = self.players[buyer]
-        # appliances: the client's press toggles the real piece on the host
+        # appliances: the client's press toggles the real piece on the host --
+        # or SETS it when the op says which way ("on": the record player), so
+        # a press built from the client's stale copy can't flip it back
         if kind in furniture.TOGGLE and gx is not None:
             fr = next((q for q in self.world.home_furniture
                        if q.kind == kind and (gx, gy) in q.cells()), None)
@@ -464,7 +474,12 @@ class NetMixin:
                 if kind in furniture.MERGE:
                     grp = next((g for g in furniture.merge_groups(self.world.home_furniture)
                                 if any(q is fr for q in g)), [fr])
-                new = not fr.on
+                if isinstance(on, bool):
+                    new = on
+                    if all(q.on == new for q in grp):
+                        return                # already that way: nothing to do
+                else:
+                    new = not fr.on
                 for q in grp:
                     q.on = new
                 label = furniture.CAT[kind]["label"]
@@ -478,6 +493,8 @@ class NetMixin:
                 else:
                     self._net_log(f"{p.name}: turns the {label} off")
                 return
+            if isinstance(on, bool):
+                return                        # a switch op for a piece that isn't there
         verb, gain = FURN_ACTION.get(kind, ("admire it", 3))
         p.energy = min(MAX_ENERGY, p.energy + gain)
         self._net_log(f"{p.name}: {verb} (+{gain} energy)")
@@ -721,6 +738,9 @@ class NetMixin:
         p = self.players[1]
         if p.inv is None:
             return False
+        if getattr(p, "sitting", None):          # seated: watch TV or stand up (host)
+            seated = getattr(self, "_home_client_seated", None)
+            return bool(seated and seated())
         pgx, pgy = int(p.x // TILE), int(p.y // TILE)
 
         # NPC: gift (holding an item) / monk fortune / chat
@@ -787,7 +807,14 @@ class NetMixin:
                     self.state = "cook"
                     self.audio.play("ui_select")
                     return True
-                if fr.kind in ("chest", "fridge", "toy_chest"):
+                home = getattr(self, "_home_client_interact", None)
+                if home:
+                    r = home(p, fr)
+                    if r is None:
+                        return False              # a seat: the host sits Player 2 down
+                    if r:
+                        return True
+                if fr.kind in ("chest", "toy_chest"):
                     self.ui.log("Storage is host-side in this version.")
                     self.audio.play("ui_move")
                     return True
@@ -1085,6 +1112,7 @@ class NetMixin:
         snap["B"] = B
         fb = self.fishing_banner
         snap["FB"] = [fb[0], list(fb[1])[:3], round(fb[2], 2)] if fb else None
+        snap.update(self._gather_hooks("_net_snap_out_"))   # e.g. seated farmers
         return snap
 
     def _apply_snapshot(self, d):
@@ -1188,6 +1216,7 @@ class NetMixin:
             fb = d["FB"]
             self.fishing_banner = ((fb[0], tuple(fb[1]), fb[2])
                                    if isinstance(fb, list) and len(fb) == 3 else None)
+        self._run_hooks("_net_snap_in_", d)
 
     # ---------------- bombs (lit fuses + blasts) for the client --------------
     def _net_pack_bombs(self):
@@ -1258,6 +1287,7 @@ class NetMixin:
     def _net_apply_fx(self, m):
         """Client: replay a host effect locally (shake, burst, sound)."""
         if m.get("kind") != "boom":
+            self._first_hook("_net_fx_", m)             # domain effects (piano notes...)
             return
         try:
             x, y = float(m.get("x", 0)), float(m.get("y", 0))

@@ -127,6 +127,23 @@ def _op_cmp(a, b):
     return -1 if ka < kb else (1 if ka > kb else 0)
 
 
+# optional painter for a switched-on TV screen: fn(surf, quad) -- set by
+# systems/home_system.py so the room's TV shows the channel being watched
+TV_ART = None
+
+
+def _tv_art(surf, quad):
+    if TV_ART is None:
+        return
+    try:
+        TV_ART(surf, quad)
+    except Exception:
+        from .systems import hooks as _hooks    # logged / strict like any hook
+        _hooks._log_hook_error("_tv_world_art")
+        if _hooks._STRICT:
+            raise
+
+
 def _item_tint(name):
     """Stable bright colour per item id (fridge shelf display)."""
     pal = ((226, 120, 120), (240, 196, 90), (150, 200, 120), (130, 170, 226),
@@ -357,6 +374,7 @@ def draw(surf, P, gx, gy, fw, fh, kind, color, rot=0, on=False, extra_ops=None,
             if on:                                               # glowing screen
                 pygame.draw.polygon(surf, (88, 148, 198), quad)
                 pygame.draw.line(surf, (170, 210, 240), fp(0.12, 0.22), fp(0.45, 0.22), 2)
+                _tv_art(surf, quad)                              # the channel playing
                 c = fp(0.88, 0.92)
                 pygame.draw.circle(surf, (120, 220, 140), (int(c[0]), int(c[1])), 2)
             else:                                                # switched off
@@ -547,8 +565,17 @@ def draw(surf, P, gx, gy, fw, fh, kind, color, rot=0, on=False, extra_ops=None,
             pygame.draw.ellipse(surf, (30, 30, 34), (c[0] - 13, c[1] - 7, 26, 14))   # vinyl
             pygame.draw.ellipse(surf, (70, 70, 76), (c[0] - 13, c[1] - 7, 26, 14), 1)
             pygame.draw.ellipse(surf, (200, 84, 84), (c[0] - 4, c[1] - 2, 8, 4))     # label
+            if on:                                  # a glint sweeping round = spinning
+                ang = (pygame.time.get_ticks() / 260.0) % math.tau
+                for k, col in ((0.0, (150, 150, 160)), (0.35, (96, 96, 106))):
+                    ex = c[0] + math.cos(ang - k) * 11
+                    ey = c[1] + math.sin(ang - k) * 5.5
+                    mx = c[0] + math.cos(ang - k) * 5
+                    my = c[1] + math.sin(ang - k) * 2.5
+                    pygame.draw.line(surf, col, (mx, my), (ex, ey), 1)
             a = _up(P(x1 - 0.24, y0 + 0.26), 21)                                     # tonearm
-            pygame.draw.line(surf, metal, a, (c[0] + 8, c[1] - 3), 2)
+            tip = (c[0] + 8, c[1] - 3) if on else (a[0] + 2, a[1] + 9)           # on the record
+            pygame.draw.line(surf, metal, a, tip, 2)                             # / at rest
             pygame.draw.circle(surf, (120, 124, 132), (int(a[0]), int(a[1])), 2)
             if vx1:
                 k = _up(P(x1 - 0.14, y1 - 0.30), 10)                                 # knob
@@ -993,12 +1020,108 @@ def _convex_corners(cells):
     return out
 
 
-def draw_group(surf, P, kind, color, cells, rot=0, on=False):
+def _gbox(surf, P, x0, y0, x1, y1, h, color, base=0, seam=(), gaps=None):
+    """_box for one part of a merged group, in REAL tile space. Sides named in
+    `seam` run on flush into a same-height part: a far side ('x0'/'y0') loses
+    its top edge and the vertical edge where the camera-facing faces meet it;
+    a near side ('x1'/'y1') is an interface the part in front covers, so its
+    face, its top edge and the front corner edge are skipped. `gaps` {far side:
+    [(a, b), ...]} leaves only those spans of a far top edge un-outlined (where
+    a chaise joins the seat). Other near sides need nothing: the part in front
+    is drawn later and its fill covers the line."""
+    gaps = gaps or {}
+    A, B, C, D = P(x0, y0), P(x1, y0), P(x1, y1), P(x0, y1)
+    zt = base + h
+    ol = _dk(color, 0.5)
+    corner = "x1" not in seam and "y1" not in seam
+    for (p, q, side, far, shade) in ((B, C, "x1", "y0", 0.72), (C, D, "y1", "x0", 0.86)):
+        if side in seam:
+            continue
+        quad = [_up(p, zt), _up(q, zt), _up(q, base), _up(p, base)]
+        pygame.draw.polygon(surf, _dk(color, shade), quad)
+        pygame.draw.line(surf, ol, quad[0], quad[1])
+        pygame.draw.line(surf, ol, quad[2], quad[3])
+        if corner:
+            pygame.draw.line(surf, ol, _up(C, zt), _up(C, base))  # front corner
+        end = p if far == "y0" else q                           # the far end
+        if far not in seam:
+            pygame.draw.line(surf, ol, _up(end, zt), _up(end, base))
+    top = [_up(A, zt), _up(B, zt), _up(C, zt), _up(D, zt)]
+    pygame.draw.polygon(surf, _lt(color), top)
+
+    def edge(side, a, b, fixed):
+        """Outline one top edge, minus the spans listed in gaps[side]."""
+        if side in seam:
+            return
+        segs = [(a, b)]
+        for g0, g1 in gaps.get(side, ()):
+            nxt = []
+            for s0, s1 in segs:
+                if g1 <= s0 or g0 >= s1:
+                    nxt.append((s0, s1))
+                    continue
+                if g0 > s0:
+                    nxt.append((s0, g0))
+                if g1 < s1:
+                    nxt.append((g1, s1))
+            segs = nxt
+        for s0, s1 in segs:
+            if side in ("y0", "y1"):
+                pa, pb = P(s0, fixed), P(s1, fixed)
+            else:
+                pa, pb = P(fixed, s0), P(fixed, s1)
+            pygame.draw.line(surf, ol, _up(pa, zt), _up(pb, zt))
+
+    edge("y0", x0, x1, y0)
+    edge("x0", y0, y1, x0)
+    edge("x1", y0, y1, x1)
+    edge("y1", x0, x1, y1)
+
+
+def _flush_ops(ops, extra_ops=None, P=None):
+    """Depth-sort a part list and draw it; extra ops (seated players) are
+    INSERTED at the first part that should paint over them -- the same rule
+    draw() uses (a sitter box mixed into one global sort can form a cycle).
+    With `P`, only parts whose screen footprint meets the extra's are asked:
+    in a long merged group a far-off armrest that is x-separated from the
+    sitter (but y-behind it) must not drag the sitter in front of the whole
+    rest of the couch -- it can't overlap it on screen, so it has no say."""
+    flushed = sorted(ops, key=functools.cmp_to_key(_op_cmp))
+
+    def srect(b, pad=0):
+        pts = [P(x, y) for x in (b[0], b[2]) for y in (b[1], b[3])]
+        xs = [q[0] for q in pts]
+        ys = [q[1] for q in pts]
+        return pygame.Rect(min(xs) - pad, min(ys) - b[5] - pad,
+                           max(xs) - min(xs) + 2 * pad,
+                           max(ys) - min(ys) + b[5] - b[4] + 2 * pad)
+    for ex in sorted(extra_ops or (), key=lambda e: e[0][4]):
+        er = srect(ex[0], 10) if P else None
+        idx = len(flushed)
+        for i, part in enumerate(flushed):
+            if er is not None and not er.colliderect(srect(part[0])):
+                continue
+            if _op_cmp(part, ex) > 0:
+                idx = i
+                break
+        flushed.insert(idx, ex)
+    for _, fn in flushed:
+        fn()
+
+
+def draw_group(surf, P, kind, color, cells, rot=0, on=False, extra_ops=None):
     """Render a merged group of `kind` over `cells` as one seamless piece.
     `rot` is the group's facing (majority rot of its pieces) -- only kinds with
     a real front like the sofa use it; symmetric cabinets ignore it. `on` is
-    the group's power state (a merged TV is one big screen)."""
+    the group's power state (a merged TV is one big screen). `extra_ops`
+    (seated players, see draw()) are depth-sorted INTO the seat groups (sofa,
+    bench); any other kind just paints them afterwards."""
     cells = set(cells)
+    if extra_ops and kind not in ("sofa", "bench"):
+        draw_group(surf, P, kind, color, cells, rot, on)
+        for _, fn in extra_ops:
+            fn()
+        return
     wood = (150, 110, 70)
     metal = (188, 192, 200)
     loops = _outline(cells)
@@ -1162,6 +1285,7 @@ def draw_group(surf, P, kind, color, cells, rot=0, on=False):
                 if on:                                                         # one WIDE picture
                     pygame.draw.polygon(surf, (88, 148, 198), quad)
                     pygame.draw.line(surf, (170, 210, 240), fp(0.10, 0.22), fp(0.38, 0.22), 2)
+                    _tv_art(surf, quad)
                     c = fp(0.94, 0.92)
                     pygame.draw.circle(surf, (120, 220, 140), (int(c[0]), int(c[1])), 2)
                 else:
@@ -1215,18 +1339,38 @@ def draw_group(surf, P, kind, color, cells, rot=0, on=False):
 
     elif kind == "bench":                           # one long padded bench
         seat_h = 14
-        _prism(surf, P, [_shrink(lp, 0.12) for lp in loops], seat_h, _dk(color, 0.82))
-        for (cx, cy) in sorted(cells, key=lambda c: c[0] + c[1]):   # one pad per cell
+        # depth-sorted like a single piece so seated players layer correctly:
+        # the base is one seamless prism under everything (its box spans the
+        # whole group, so every pad / sitter body z-sorts above it)
+        blo = [_shrink(lp, 0.12) for lp in loops]
+        xs = [c[0] for c in cells]
+        ys = [c[1] for c in cells]
+        ops = [((min(xs) + 0.12, min(ys) + 0.12, max(xs) + 0.88, max(ys) + 0.88,
+                 0, seat_h),
+                lambda: _prism(surf, P, blo, seat_h, _dk(color, 0.82)))]
+        for (cx, cy) in cells:                      # one pad per cell
             r = [(cx + 0.18, cy + 0.18), (cx + 0.82, cy + 0.18),
                  (cx + 0.82, cy + 0.82), (cx + 0.18, cy + 0.82)]
-            _prism(surf, P, [r], 6, _lt(color, 1.1), base=seat_h)
+            ops.append(((cx + 0.18, cy + 0.18, cx + 0.82, cy + 0.82, seat_h, seat_h + 6),
+                        lambda r=r: _prism(surf, P, [r], 6, _lt(color, 1.1), base=seat_h)))
+        _flush_ops(ops, extra_ops, P)
 
     elif kind == "sofa":                            # sectional / L-couch
+        # Built from the SAME parts as a single sofa -- backrest strip, seat
+        # base, armrests, back + seat cushions -- as real boxes that never
+        # interpenetrate, then depth-sorted with _op_cmp (seated players are
+        # slotted in like draw() does). Consecutive cells along the back fuse
+        # into one strip / one base box, so a straight couch has no seams; a
+        # chaise (cell with sofa behind it) gets its own base box that runs
+        # 0.06 back under the seat edge and hides the join line (_gbox).
         seat_h, aw = 12, 0.18
         # back side follows the group's facing, same mapping the single piece
         # gets from its rotation: rot 0 back at -y, 1 at +x, 2 at +y, 3 at -x
         d = ((0, -1), (1, 0), (0, 1), (-1, 0))[rot % 4]
         ax = 0 if d[0] == 0 else 1                  # back runs along x (0) or y (1)
+        lo_side = "x0" if ax == 0 else "y0"         # lateral lo side (always far)
+        back_side = {(0, -1): "y0", (0, 1): "y1", (-1, 0): "x0", (1, 0): "x1"}[d]
+        front_side = {"y0": "y1", "y1": "y0", "x0": "x1", "x1": "x0"}[back_side]
 
         def band(cx, cy, t0, t1, mlo=0.06, mhi=0.06):
             """Tile-rect strip t0..t1 deep from the BACK edge of cell (cx,cy),
@@ -1239,56 +1383,95 @@ def draw_group(surf, P, kind, color, cells, rot=0, on=False):
                 return (cx + t0, cy + mlo, cx + t1, cy + 1 - mhi)
             return (cx + 1 - t1, cy + mlo, cx + 1 - t0, cy + 1 - mhi)
 
-        parts = []                                  # (depth, rect, h, colour, base)
+        def run_rect(seg, t0, t1, mlo, mhi):
+            a = band(*seg[0], t0, t1, mlo, mhi)
+            b = band(*seg[-1], t0, t1, mlo, mhi)
+            return (min(a[0], b[0]), min(a[1], b[1]), max(a[2], b[2]), max(a[3], b[3]))
 
-        def part(r, hh, colr, base=0):
-            parts.append(((r[0] + r[1] + r[2] + r[3]) / 2.0, r, hh, colr, base))
+        def nb(c, s):                               # neighbour along the run axis
+            return (c[0] + s, c[1]) if ax == 0 else (c[0], c[1] + s)
+
+        def runs(cs):
+            """Maximal runs of consecutive cells along the back's axis."""
+            rows, out = {}, []
+            for c in cs:
+                rows.setdefault(c[1 - ax], []).append(c)
+            for key in sorted(rows):
+                rcs = sorted(rows[key], key=lambda c: c[ax])
+                seg = [rcs[0]]
+                for c in rcs[1:]:
+                    if c[ax] == seg[-1][ax] + 1:
+                        seg.append(c)
+                    else:
+                        out.append(seg)
+                        seg = [c]
+                out.append(seg)
+            return out
+
+        ops = []
+
+        def add(r, z0, hh, colr, **kw):
+            def fn(r=r, z0=z0, hh=hh, colr=colr, kw=kw):
+                _gbox(surf, P, r[0], r[1], r[2], r[3], hh, colr, base=z0, **kw)
+            ops.append(((r[0], r[1], r[2], r[3], z0, z0 + hh), fn))
 
         backed = {c for c in cells if (c[0] + d[0], c[1] + d[1]) not in cells}
-        # backrest strips: consecutive backed cells fuse into ONE strip (no seams)
-        runs = {}
-        for c in backed:
-            runs.setdefault(c[1 - ax], []).append(c)
-        arm_at = {}                                 # cell -> {"lo","hi"} arm sides
+        bases = []                                  # (seg, rect, is_chaise, lo_open)
+        for seg in runs(backed):
+            lo_open = nb(seg[0], -1) in cells       # run continues into a chaise
+            hi_open = nb(seg[-1], 1) in cells       # ...otherwise: an armrest
+            llo = 0.0 if lo_open else 0.04 + aw
+            lhi = 0.0 if hi_open else 0.04 + aw
+            add(run_rect(seg, 0.06, 0.32, llo, lhi), 0, seat_h + 18, color)    # backrest
+            bases.append((seg, run_rect(seg, 0.32, 0.94, llo, lhi), False, lo_open))
+            if not lo_open:                         # armrests at the open run ends
+                add(band(*seg[0], 0.06, 0.94, 0.04, 1 - 0.04 - aw), 0, seat_h + 9,
+                    _dk(color, 0.92))
+            if not hi_open:
+                add(band(*seg[-1], 0.06, 0.94, 1 - 0.04 - aw, 0.04), 0, seat_h + 9,
+                    _dk(color, 0.92))
+            for c in seg:                           # back + seat cushion per cell
+                mlo = 0.26 if (c == seg[0] and not lo_open) else 0.10
+                mhi = 0.26 if (c == seg[-1] and not hi_open) else 0.10
+                add(band(*c, 0.32, 0.50, mlo, mhi), seat_h, 11, _lt(color, 1.06))
+                add(band(*c, 0.50, 0.90, mlo, mhi), seat_h, 4, _lt(color, 1.12))
+        for seg in runs(cells - backed):            # chaise cells: base + one pad
+            lo_open = nb(seg[0], -1) in cells
+            hi_open = nb(seg[-1], 1) in cells
+            bases.append((seg, run_rect(seg, -0.06, 0.94, 0.0 if lo_open else 0.06,
+                                        0.0 if hi_open else 0.06), True, lo_open))
+            for c in seg:
+                add(band(*c, 0.10, 0.90, 0.10, 0.10), seat_h, 4, _lt(color, 1.12))
+        # seat bases: hide the join lines between neighbouring base boxes. The
+        # FAR depth side (the back at rot 0/3, the front at rot 1/2) either
+        # continues flush into an identical box (a chaise two deep -> full
+        # seam) or only its top edge is skipped where another box joins.
+        far_back = back_side in ("x0", "y0")
+        far_side = back_side if far_back else front_side
+        near_side = {"x0": "x1", "y0": "y1"}[far_side]
+        fdir = d if far_back else (-d[0], -d[1])
+        lat = (0, 2) if ax == 0 else (1, 3)
+        for seg, r, chaise, lo_open in bases:
+            seam = [lo_side] if lo_open else []
+            gaps = {}
+            behind = [(c[0] + fdir[0], c[1] + fdir[1]) for c in seg]
+            ahead = [(c[0] - fdir[0], c[1] - fdir[1]) for c in seg]
 
-        def emit(seg):
-            b0 = band(*seg[0], 0.06, 0.32)
-            b1 = band(*seg[-1], 0.06, 0.32)
-            part((min(b0[0], b1[0]), min(b0[1], b1[1]),
-                  max(b0[2], b1[2]), max(b0[3], b1[3])), seat_h + 18, color)
-            for cell, side, nb in ((seg[0], "lo", -1), (seg[-1], "hi", 1)):
-                step = (nb, 0) if ax == 0 else (0, nb)
-                if (cell[0] + step[0], cell[1] + step[1]) not in cells:
-                    arm_at.setdefault(cell, set()).add(side)
-
-        for key, rcs in runs.items():
-            rcs.sort()
-            seg = [rcs[0]]
-            for c in rcs[1:]:
-                if c[ax] == seg[-1][ax] + 1:
-                    seg.append(c)
-                else:
-                    emit(seg)
-                    seg = [c]
-            emit(seg)
-        for cell, sides in arm_at.items():          # armrests at the open run ends
-            for side in sides:
-                mlo, mhi = (0.04, 1 - 0.04 - aw) if side == "lo" else (1 - 0.04 - aw, 0.04)
-                part(band(*cell, 0.06, 0.94, mlo, mhi), seat_h + 9, _dk(color, 0.92))
-        for c in sorted(cells, key=lambda c: c[0] + c[1]):          # cushions per cell
-            sides = arm_at.get(c, ())
-            mlo = 0.26 if "lo" in sides else 0.10   # tuck in beside an armrest
-            mhi = 0.26 if "hi" in sides else 0.10
-            if c in backed:
-                part(band(*c, 0.34, 0.52, mlo, mhi), 11, _lt(color, 1.06), base=seat_h)
-                part(band(*c, 0.52, 0.90, mlo, mhi), 4, _lt(color, 1.12), base=seat_h)
-            else:                                   # chaise cell: one full pad
-                part(band(*c, 0.10, 0.90, mlo, mhi), 4, _lt(color, 1.12), base=seat_h)
-
-        _prism(surf, P, [_shrink(lp, 0.06) for lp in loops], seat_h, color)
-        for _, r, hh, colr, base in sorted(parts, key=lambda p: p[0]):
-            _prism(surf, P, [[(r[0], r[1]), (r[2], r[1]), (r[2], r[3]), (r[0], r[3])]],
-                   hh, colr, base=base)
+            def twin(cs):                           # same-width base box there?
+                r2 = next((r2 for s2, r2, _, _ in bases if s2 == cs), None)
+                return r2 is not None and all(abs(r2[i] - r[i]) < 1e-6 for i in lat)
+            if twin(ahead):
+                seam.append(near_side)              # flush into the box in front
+            if twin(behind):
+                seam.append(far_side)
+            elif far_back and chaise:
+                gaps[far_side] = [(-1e9, 1e9)]      # joins the seat behind it
+            elif not far_back:
+                spans = [(c[ax], c[ax] + 1) for c, bc in zip(seg, behind) if bc in cells]
+                if spans:
+                    gaps[far_side] = spans          # a chaise joins in front
+            add(r, 0, seat_h, color, seam=tuple(seam), gaps=gaps)
+        _flush_ops(ops, extra_ops, P)
 
     else:                                           # generic merged cabinet
         _prism(surf, P, [_shrink(lp, 0.08) for lp in loops], HEIGHT.get(kind, 22), color)

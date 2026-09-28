@@ -105,13 +105,27 @@ class UIMixin:
         # title: never hard-clipped mid-word -- full size when it fits the
         # (right-anchored) card, else a slightly smaller font, else two
         # word-wrapped lines; '...' only for a single over-long word
-        tlines = self._toast_title_lines(title, _TOAST_TITLE_MAX)
+        # text Consolas can't draw (Thai, CJK, emoji...) gets a face that can
+        # (_toast_text); plain toasts never take that path (pixel-identical)
+        tfb = self._toast_text(title, 18, True)
+        if tfb is None:
+            tlines = self._toast_title_lines(title, _TOAST_TITLE_MAX)
+        else:
+            tlines = self._toast_title_lines_fb(tfb, _TOAST_TITLE_MAX)
         tsurfs = [f.render(ln, True, col) for f, ln in tlines]
         th = sum(s.get_height() for s in tsurfs) - 2 * (len(tsurfs) - 1)
         ts = tsurfs[0]
         # subtitle word-wrapped to at most two lines
         lines = []
-        if sub:
+        lh = 16                                     # subtitle line pitch
+        sfb = self._toast_text(sub, 14, False)
+        if sfb is not None:
+            from .. import records
+            sf = sfb[0]
+            lines = [ln for ln in records.wrap_lines(sf, sfb[1], maxt, 2) if ln]
+            lh = max(16, sf.get_linesize() - 2)     # room for Thai marks above/below
+            subs = [sf.render(ln, True, (232, 228, 240)) for ln in lines]
+        elif sub:
             cur = ""
             for wd in sub.split():
                 cand = (cur + " " + wd).strip()
@@ -128,11 +142,12 @@ class UIMixin:
                 while self.ui.small.size(lines[1] + "...")[0] > maxt and len(lines[1]) > 1:
                     lines[1] = lines[1][:-1]
                 lines[1] += "..."
-        subs = [self.ui.small.render(ln, True, (232, 228, 240)) for ln in lines]
+        if sfb is None:
+            subs = [self.ui.small.render(ln, True, (232, 228, 240)) for ln in lines]
         ss = subs[0] if subs else None
         w = max(_TOAST_W, max([x.get_width() for x in tsurfs + subs]) + 86)
         sub_y = max(33, 9 + th + 3)                 # 33 = the classic one-line layout
-        h = max(48, th + 22) if not subs else sub_y + 16 * len(subs) + 13
+        h = max(48, th + 22) if not subs else sub_y + lh * len(subs) + 13
         card = pygame.Surface((w, h), pygame.SRCALPHA)
         # body: dark plum with a soft top sheen + coloured left rail
         pygame.draw.rect(card, (34, 28, 46, 236), card.get_rect(), border_radius=12)
@@ -174,8 +189,38 @@ class UIMixin:
             card.blit(s, (62, ty))
             ty += s.get_height() - 2
         for i, line in enumerate(subs):
-            card.blit(line, (62, sub_y + i * 16))
+            card.blit(line, (62, sub_y + i * lh))
         return card
+
+    def _toast_text(self, text, size, bold):
+        """(font, text) for toast text Consolas can't draw -- Thai, CJK,
+        emoji... -- in the first system face that has it (records.song_face,
+        the record player's picker; glyphs no face has are dropped). None when
+        Consolas draws it all, so plain toasts keep their own fonts."""
+        if not text or all(ord(c) < 0x7F for c in text):
+            return None
+        try:
+            from .. import records
+            if records.consolas_ok(text):
+                return None
+            face, txt = records.song_face(text, placeholder="")
+            return records.song_font(face, size, bold), txt
+        except Exception:
+            return None
+
+    def _toast_title_lines_fb(self, fb, maxw):
+        """_toast_title_lines for a fallback-face title (``fb`` from
+        _toast_text): full size, else 16 px, else two lines -- broken mid-word
+        when needed (Thai / CJK titles have no spaces)."""
+        from .. import records
+        big, txt = fb
+        if big.size(txt)[0] <= maxw:
+            return [(big, txt)]
+        mid = self._toast_text(txt, 16, True)
+        mid = mid[0] if mid else big
+        if mid.size(txt)[0] <= maxw:
+            return [(mid, txt)]
+        return [(mid, ln) for ln in records.wrap_lines(mid, txt, maxw, 2)]
 
     def _toast_title_lines(self, title, maxw):
         """[(font, text), ...] -- one or two lines that fit ``maxw`` pixels."""

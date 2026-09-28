@@ -31,6 +31,10 @@ class Audio:
         self.master = 0.8
         self.sfx_vol = 0.9
         self.music_vol = 0.45
+        # background-music duck (0..1): the record player sets it while real
+        # Spotify plays; every music set_volume multiplies it in (1.0 = no-op)
+        self.music_duck = 1.0
+        self._song_duck = False
         try:
             pygame.mixer.init(frequency=44100, size=-16, channels=1, buffer=512)
             init = pygame.mixer.get_init()
@@ -347,7 +351,7 @@ class Audio:
         try:
             self.music_chan = self.music.play(loops=-1)
             if self.music_chan:
-                self.music_chan.set_volume(self.master * self.music_vol)
+                self.music_chan.set_volume(self.master * self.music_vol * self.music_duck)
         except Exception:
             pass
 
@@ -364,7 +368,7 @@ class Audio:
             self.music_chan = track.play(loops=-1)
             self.cur_track = track
             if self.music_chan:
-                self.music_chan.set_volume(self.master * self.music_vol)
+                self.music_chan.set_volume(self.master * self.music_vol * self.music_duck)
         except Exception:
             pass
 
@@ -384,7 +388,7 @@ class Audio:
             self.music_chan = track.play(loops=-1, fade_ms=1200)
             self.cur_track = track
             if self.music_chan:
-                self.music_chan.set_volume(self.master * self.music_vol)
+                self.music_chan.set_volume(self.master * self.music_vol * self.music_duck)
         except Exception:
             pass
 
@@ -480,8 +484,9 @@ class Audio:
             pygame.mixer.music.load(path)
             pygame.mixer.music.set_volume(min(1.0, self.master * 0.9))
             pygame.mixer.music.play(loops=-1)
+            self._song_duck = True
             if self.music_chan:
-                self.music_chan.set_volume(self.master * self.music_vol * 0.10)
+                self.music_chan.set_volume(self.master * self.music_vol * 0.10 * self.music_duck)
         except Exception:
             pass
 
@@ -489,20 +494,36 @@ class Audio:
         """Stop the streaming song (if any) and restore the background loop volume."""
         if not self.enabled:
             return
+        self._song_duck = False
         try:
             pygame.mixer.music.stop()
         except Exception:
             pass
         if self.music_chan:
             try:
-                self.music_chan.set_volume(self.master * self.music_vol)
+                self.music_chan.set_volume(self.master * self.music_vol * self.music_duck)
             except Exception:
                 pass
 
     def _refresh_music_volume(self):
         if self.music_chan:
             try:
-                self.music_chan.set_volume(self.master * self.music_vol)
+                self.music_chan.set_volume(self.master * self.music_vol * self.music_duck)
+            except Exception:
+                pass
+
+    def set_music_duck(self, f):
+        """Scale the background loop (never sfx / ambience) by ``f`` (0..1) --
+        the record player ducks it while real Spotify is playing. Keeps the
+        anniversary song's own 10% duck if that song is on."""
+        f = max(0.0, min(1.0, float(f)))
+        if abs(f - self.music_duck) < 1e-4:
+            return
+        self.music_duck = f
+        if self.music_chan:
+            try:
+                k = 0.10 if self._song_duck else 1.0
+                self.music_chan.set_volume(self.master * self.music_vol * k * f)
             except Exception:
                 pass
 

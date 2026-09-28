@@ -141,7 +141,7 @@ class RenderMixin:
         for n in self._hook_names("_lights_"):
             lights += self._call_hook(n) or ()
         self.night = lighting.apply(self.screen, self.time.minutes, self.world.current,
-                                    self.players, self.cam, lights)
+                                    [] if iso_home else self.players, self.cam, lights)
         self._draw_hurt_flash()
         self._run_hooks("_draw_sky_")                       # lightning etc. (under the HUD)
         if self.fade > 0:

@@ -27,6 +27,9 @@ from .story_system import StoryMixin
 from .world_system import WorldMixin
 from .ui_system import UIMixin
 from .areactx_system import AreaCtxMixin
+from .home_system import HomeMixin
+from .piano_system import PianoMixin
+from .records_system import RecordsMixin
 
 __all__ = [
     "SaveMixin", "ActionsMixin", "CombatMixin", "FarmMixin", "FishingMixin",

@@ -122,9 +122,9 @@ def surface_slots(kind):
 
 
 # seats the players can actually SIT on (interact -> sit, move/action -> stand).
-# chair + piano_bench are EXCLUDED by design: their small/side poses never read
-# cleanly at this sprite scale, so they keep the plain energy-buff interaction.
-SEATS = {"stool", "bench", "sofa", "armchair"}
+# (2026-09-28: chairs and the piano bench joined -- homeiso._sitter_ops lifts a
+# side-facing sitter clear of the chair's narrow backrest.)
+SEATS = {"stool", "bench", "sofa", "armchair", "chair", "piano_bench"}
 # cushion-top height (px) per seat kind -- the sitter's hips land here
 SEAT_TOP = {"chair": 15, "stool": 15, "piano_bench": 18, "bench": 20,
             "sofa": 16, "armchair": 16}
@@ -133,7 +133,7 @@ SIT_FACE = {"piano", "dining_table", "coffee_table", "counter",
             "kitchen_island", "workbench", "vanity"}
 # only BACKLESS seats may swivel toward a SIT_FACE neighbour -- on an
 # armchair or sofa you always sit the way the backrest points
-SWIVEL_SEATS = {"stool", "bench"}
+SWIVEL_SEATS = {"stool", "bench", "piano_bench"}
 # appliances/lights that toggle on/off with interact (visual state on Placed.on)
 TOGGLE = {"tv", "lamp", "wall_lamp", "desk_lamp", "neon_sign", "fireplace",
           "microwave", "standing_fan", "record_player", "candle_small"}
@@ -603,12 +603,12 @@ DEFAULT_HOME = [
     ("dresser", 4, 1, 0, 9), ("vanity", 4, 2, 0, 0),
     # living room (top-right)
     ("sofa", 8, 1, 0, 9), ("coffee_table", 9, 2, 0, 0),
-    ("bookshelf", 11, 1, 0, 8), ("armchair", 12, 1, 0, 5), ("tv", 12, 2, 0, 11),
+    ("bookshelf", 11, 1, 0, 8), ("armchair", 12, 4, 1, 5), ("tv", 12, 2, 0, 11),
     ("rug", 5, 3, 0, 9),
     # kitchen (left wall) -- stove & fridge are functional
     ("counter", 1, 4, 0, 0), ("stove", 1, 5, 0, 11), ("fridge", 1, 6, 0, 5),
     # dining + storage + cosy bits (bottom)
-    ("dining_table", 4, 7, 0, 4), ("chair", 4, 8, 0, 3), ("chair", 5, 8, 0, 3),
+    ("dining_table", 4, 7, 0, 4), ("chair", 4, 8, 2, 3), ("chair", 5, 8, 2, 3),
     ("chest", 11, 7, 0, 10), ("lamp", 12, 6, 0, 3),
     ("plant", 1, 8, 0, 4), ("plant", 12, 8, 0, 4),
     # wall-mounted decor on the BACK wall (top row, gy = 0)

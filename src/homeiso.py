@@ -229,15 +229,17 @@ def _sitter_ops(scr, ox, oy, p, sx, sy, st, kind="chair"):
     piece's OWN depth-sorted parts: backrest behind the body, armrests / the
     front edge over the hips. When the player faces AWAY ('up'/'left') the
     legs hang on the FAR side, so they are a separate LOW op the seat itself
-    occludes -- only the feet peek out underneath (Stardew draw-tile style)."""
+    occludes -- only the feet peek out underneath (Stardew draw-tile style).
+    Each fn carries a .role ('body' / 'legs' / 'ghost') for tests & callers."""
     d = ("up" if p.fy < 0 else "down" if p.fy > 0
          else "left" if p.fx < 0 else "right")
     isx, isy = proj(ox, oy, sx, sy)
+    top_left = (isx - chars.seated_frames(p.appearance)[d].get_width() // 2,
+                isy - st - chars.SEATED_HIP_Y)
 
     def body():
-        frame = chars.seated_frames(p.appearance)[d]
-        scr.blit(frame, (isx - frame.get_width() // 2,
-                         isy - st - chars.SEATED_HIP_Y))
+        scr.blit(chars.seated_frames(p.appearance)[d], top_left)
+    body.role = "body"
     ops = []
     if d == "up":
         def legs():
@@ -246,21 +248,117 @@ def _sitter_ops(scr, ox, oy, p, sx, sy, st, kind="chair"):
             # underneath while the seat occludes the shins
             scr.blit(fr, (isx - fr.get_width() // 2,
                           isy - st - chars.SEATED_HIP_Y + 7))
+        legs.role = "legs"
         # low + thin box: every seat surface (bases at z>=11) sorts in front
         ops.append(((sx - 0.14, sy - 0.14, sx + 0.14, sy + 0.14, 2, 10), legs))
     # the body sits ON the cushion (z starts at the seat top, so the cushion
     # cleanly z-sorts below it).
+    # small leggy seats: the sitter's box must OVERLAP the thin legs (so they sort
+    # as "below" by z) -- a box that merely touches a front leg would make that
+    # leg, and everything flushed after it (the seat!), paint over the torso
+    hw = 0.21 if kind in ("chair", "stool", "piano_bench") else 0.18
+    # ...but toward the BACKREST the box may only reach as far as the seat's
+    # back cushion / backrest face: a symmetric box overlapped the sofa's back
+    # cushion (it ends exactly at the seat centre), the depth fallback then
+    # ranked that cushion nearer and it painted over the whole torso (rot 0
+    # left cushion, rot 3 far cushion -- the default house sofa). Stopping the
+    # box at the cushion face lets the x/y rule separate them cleanly: back
+    # cushion behind a camera-facing sitter, in front of an away-facing one.
+    bk = _BACK_REACH.get(kind, hw)
+    fx = 1 if d == "right" else -1 if d == "left" else 0
+    fy = 1 if d == "down" else -1 if d == "up" else 0
+    box = (sx - (bk if fx > 0 else hw), sy - (bk if fy > 0 else hw),
+           sx + (bk if fx < 0 else hw), sy + (bk if fy < 0 else hw))
     if kind == "chair" and d == "left":
         # SIDE-facing chair: the narrow backrest lands camera-side and would
         # swallow the whole torso. Lift the body's z floor above the backrest
         # top (29px) AND stretch its box over the backrest's x-range so the
         # x-rule can't pre-empt the z-rule -- the player then visibly sits
         # leaning against the backrest instead of hiding behind it.
-        ops.append(((sx - 0.18, sy - 0.18, sx + 0.48, sy + 0.18, 30, 64), body))
+        ops.append(((sx - hw, sy - hw, sx + 0.48, sy + hw, 30, 64), body))
     else:
-        ops.append(((sx - 0.18, sy - 0.18, sx + 0.18, sy + 0.18, st, st + 34),
-                    body))
+        ops.append((box + (st, st + 34), body))
+        if d in ("up", "left") and kind in _BACK_REACH:
+            # facing AWAY: the backrest sits between the camera and the sitter
+            # and hides everything but the head. Paint a see-through silhouette
+            # of the HIDDEN part of the body over it (Sims-style x-ray) so the
+            # farmer visibly sits IN the seat; the box lies past every part of
+            # the piece, so this op always flushes last.
+            def ghost():
+                _blit_ghost(scr, p.appearance, d, top_left)
+            ghost.role = "ghost"
+            ops.append(((sx + 9, sy + 9, sx + 9.1, sy + 9.1, 0, 1), ghost))
     return ops
+
+
+# how far a sitter's depth box may reach toward the backrest, per seat kind
+# with a back: sofa/armchair back cushions end exactly at the seat centre, the
+# chair's thin backrest face sits 0.20 behind it (backless seats: symmetric)
+_BACK_REACH = {"sofa": 0.0, "armchair": 0.0, "chair": 0.20}
+
+_GHOSTS = {}
+GHOST_CUT = chars.SEATED_HIP_Y - 2      # ghost rows stop above the resting hands
+GHOST_FADE = (0.55,)                    # alpha factor(s) of the last row(s), bottom up
+GHOST_LIGHT = 0.30                      # how far the x-ray colours lift toward white
+
+
+def _ghost_frame(appearance, d, fill_a=176, line_a=190):
+    """(image, mask) for the x-ray silhouette of a seated body: the UPPER body
+    only (rows above the hands -- the dangling legs and hands really are
+    hidden by the seat), colours lifted ~30% toward white so it reads the
+    same on a navy or a pink cushion, ringed by a 1px dark outline so it
+    still reads on a white one; the bottom row fades. Cached per look."""
+    key = (tuple(sorted((k, v) for k, v in appearance.items() if k != "name")), d)
+    got = _GHOSTS.get(key)
+    if got is None:
+        src = chars.seated_frames(appearance)[d]
+        w, h = src.get_size()
+        cut = pygame.Rect(0, 0, w, GHOST_CUT)
+        img = pygame.Surface((w, h), pygame.SRCALPHA)
+        img.blit(src, (0, 0), cut)
+        # lerp GHOST_LIGHT toward white (c*(1-k) + 255k), opaque alpha -> fill_a
+        keep = int(round(255 * (1 - GHOST_LIGHT)))
+        img.fill((keep, keep, keep, fill_a), special_flags=pygame.BLEND_RGBA_MULT)
+        img.fill((255 - keep,) * 3 + (0,), special_flags=pygame.BLEND_RGBA_ADD)
+        # outline = silhouette minus its 4-neighbour erosion (of the FULL body,
+        # so the crop line itself gets no outline), kept above the cut
+        full = pygame.mask.from_surface(src)
+        er = full.copy()
+        for off in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+            er = er.overlap_mask(full, off)
+        edge = full.copy()
+        edge.erase(er, (0, 0))
+        edge = edge.overlap_mask(pygame.mask.Mask(cut.size, fill=True), (0, 0))
+        edge.to_surface(img, setcolor=(44, 34, 58, line_a), unsetcolor=None)
+        for i, k in enumerate(GHOST_FADE):         # soft fade into the seat
+            img.fill((255, 255, 255, int(255 * k)),
+                     pygame.Rect(0, GHOST_CUT - 1 - i, w, 1),
+                     special_flags=pygame.BLEND_RGBA_MULT)
+        mask = pygame.mask.from_surface(src).overlap_mask(
+            pygame.mask.Mask(cut.size, fill=True), (0, 0))
+        got = (img, mask)
+        if len(_GHOSTS) > 32:
+            _GHOSTS.clear()
+        _GHOSTS[key] = got
+    return got
+
+
+def _blit_ghost(scr, appearance, d, top_left):
+    """Paint the x-ray silhouette ONLY where the seated body (already drawn at
+    top_left) ended up covered by the seat: pixels that no longer match the
+    body frame. The visible head stays crisp; the torso behind the backrest
+    shows through as a light, outlined silhouette."""
+    img, mask = _ghost_frame(appearance, d)
+    frame = chars.seated_frames(appearance)[d]
+    r = pygame.Rect(top_left, frame.get_size())
+    if not scr.get_rect().contains(r):
+        return                          # half off-screen: skip the nicety
+    same = pygame.mask.from_threshold(scr.subsurface(r), (0, 0, 0, 0),
+                                      (4, 4, 4, 255), othersurface=frame)
+    hidden = mask.copy()
+    hidden.erase(same, (0, 0))
+    if hidden.count():
+        scr.blit(hidden.to_surface(setsurface=img, unsetcolor=(0, 0, 0, 0)), r)
 
 
 def top_height(kind):
@@ -460,10 +558,12 @@ def draw_room(game, build=False, players=True):
             isx, isy = proj(ox, oy, gx, gy)     # feet -> same iso point, no shift
             obj.draw(scr, _Cam(obj.x - isx, obj.y - isy))
         elif lay == "group":
-            isofurn.draw_group(scr, Pf, kind, col, obj[0], rot, on=obj[1])
-            for s in obj[2]:                    # merged seats: sitter on top
-                for _, fn in _sitter_ops(scr, ox, oy, *s):
-                    fn()
+            # merged seats: sitters are depth-sorted INTO the group's parts,
+            # exactly like a single piece (away-facing bodies behind the
+            # backrest, their x-ray ghost last; camera-facing ones in front)
+            isofurn.draw_group(scr, Pf, kind, col, obj[0], rot, on=obj[1],
+                               extra_ops=[op for s in obj[2]
+                                          for op in _sitter_ops(scr, ox, oy, *s)])
         elif lay == "top":
             isofurn.draw_top(scr, Pf, obj[0], obj[1], kind, col, obj[2],
                              on=obj[3])

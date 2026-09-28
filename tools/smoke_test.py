@@ -31,6 +31,7 @@ os.environ["APPDATA"] = _TMP
 os.environ["XDG_DATA_HOME"] = _TMP
 os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
 os.environ.setdefault("SDL_AUDIODRIVER", "dummy")
+os.environ["HD_NO_EXTERNAL"] = "1"                  # never launch Spotify / send media keys
 os.environ.setdefault("HD_STRICT_HOOKS", "1")      # hook errors fail the test
 sys.path.insert(0, ROOT)
 os.chdir(ROOT)
@@ -445,6 +446,102 @@ def s_build(g):
     return f"{len(g.world.home_furniture)} furniture placed"
 
 
+def s_home(g):
+    """Functional furniture (HomeMixin): fridge, TV, wardrobe, seats, books."""
+    from src.settings import AREA_HOME, P1_KEYS
+    from src import furniture as F
+    g.warp(AREA_HOME, spawns_by_area(g)[AREA_HOME])
+    g.state = "play"
+    p = g.players[0]
+    ev = pygame.event.Event
+
+    def poke(keys, name):
+        for k in keys:
+            g._run_state("event", ev(pygame.KEYDOWN, key=k, mod=0, unicode="", scancode=0))
+            for _ in range(3):
+                g._run_state("update", DT)
+            g.draw()
+        shot(g, name)
+
+    def piece(kind):
+        q = next((q for q in g.world.home_furniture if q.kind == kind), None)
+        if q is None:
+            q = F.Placed(kind, 6, 5, 0, 0)
+            g.world.home_furniture.append(q)
+        return q
+
+    def fridge():
+        fr = piece("fridge")
+        p.inv.add("parsnip", 3)
+        p.inv.add("sardine", 1)
+        g.interact_furniture(p, fr)
+        assert g.state == "fridge", g.state
+        poke([P1_KEYS["left"], P1_KEYS["action"], P1_KEYS["down"], P1_KEYS["action"],
+              P1_KEYS["right"], P1_KEYS["down"], P1_KEYS["up"], pygame.K_e], "home_fridge")
+        have = fr.store.get("parsnip", 0)
+        ok, _ = g._fridge_op(0, fr, "put", "parsnip", 1)
+        assert ok and fr.store.get("parsnip", 0) == have + 1, fr.store
+        p.inv.add("wood", 1)
+        ok, msg = g._fridge_op(0, fr, "put", "wood", 1)
+        assert not ok and "wood" not in fr.store, "wood went in the fridge"
+        assert g._kitchen_count("parsnip") >= 3
+        poke([pygame.K_ESCAPE], "home_fridge_close")
+        for _ in range(40):
+            g._run_state("update", DT)
+        assert g.state == "play" and not fr.on, (g.state, fr.on)
+    check("home fridge: stock, eat, shut", fridge)
+
+    def tv():
+        t = piece("tv")
+        t.on = False
+        g.interact_furniture(p, t)
+        assert g.state == "tv" and t.on
+        for _ in range(30):
+            g._run_state("update", DT)
+        poke([P1_KEYS["right"], P1_KEYS["right"], P1_KEYS["right"], P1_KEYS["right"],
+              pygame.K_3], "home_tv")
+        poke([P1_KEYS["action"]], "home_tv_off")
+        for _ in range(40):
+            g._run_state("update", DT)
+        assert g.state == "play" and not t.on, (g.state, t.on)
+    check("home tv: channels + power", tv)
+
+    def wardrobe():
+        before = dict(p.appearance)
+        g.interact_furniture(p, piece("wardrobe"))
+        assert g.state == "wardrobe"
+        poke([P1_KEYS["right"], P1_KEYS["up"], P1_KEYS["left"]], "home_wardrobe")
+        poke([pygame.K_ESCAPE], "home_wardrobe_cancel")
+        assert g.state == "play" and p.appearance == before, "Esc must put the look back"
+    check("home wardrobe: try on, put back", wardrobe)
+
+    def seats():
+        for kind in sorted(F.SEATS):
+            q = piece(kind)
+            for rot in range(4):
+                q.rot = rot
+                g.interact_furniture(p, q)
+                assert p.sitting and p.sitting[0] is q, kind
+                g.draw()
+                p.sitting = None
+            q.rot = 0
+        return f"{len(F.SEATS)} seat kinds x 4 rotations"
+    check("home seats: every seat, every rotation", seats)
+
+    def small_things():
+        for kind in ("clock", "window", "bookshelf", "piano"):
+            g.interact_furniture(p, piece(kind))
+            g.draw()
+            settle(g)
+        g.time.minutes = 22 * 60
+        piece("lamp").on = True
+        assert g._lights_home(), "no night glow from the lamps"
+        g.draw()
+        shot(g, "home_night")
+    check("home clock/window/books/piano/lights", small_things)
+    settle(g)
+
+
 def s_inventory(g):
     g._open_inventory(0)
     g.draw()
@@ -742,7 +839,7 @@ def main():
     order = [("menu", s_menu), ("gallery", s_gallery), ("creator", s_creator),
              ("areas", s_areas), ("walk", s_walk), ("actions", s_actions),
              ("farming", s_farming), ("mine", s_mine), ("time", s_time),
-             ("build", s_build), ("inventory", s_inventory), ("overlays", s_overlays),
+             ("build", s_build), ("home", s_home), ("inventory", s_inventory), ("overlays", s_overlays),
              ("mist", s_mist), ("hotkeys", s_hotkeys), ("custom_states", s_custom_states),
              ("events", s_events), ("domain", s_domain_tests), ("net", s_net), ("save", s_save), ("old_saves", s_old_saves),
              ("perf", s_perf)]

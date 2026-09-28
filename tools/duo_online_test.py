@@ -19,6 +19,7 @@ os.environ["APPDATA"] = _TMP
 os.environ["XDG_DATA_HOME"] = _TMP
 os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
 os.environ.setdefault("SDL_AUDIODRIVER", "dummy")
+os.environ["HD_NO_EXTERNAL"] = "1"                  # never launch Spotify / send media keys
 os.environ.setdefault("HD_STRICT_HOOKS", "1")
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
@@ -142,6 +143,9 @@ def main():
         assert until(lambda: host.net.connected and getattr(client, "_net_world_seen", False)), \
             "client never synced"
         assert host.independent() and not client.independent()
+        # let the host's own start-of-play iris finish, so the "P2's warp never
+        # plays an iris on the host" check below can't race a fast connect
+        assert until(lambda: host.fade <= 0.01, limit=180), "host start iris never ended"
         return f"port {NS.PORT}"
     check("connect: real host + client over TCP", connect)
 
@@ -369,6 +373,153 @@ def main():
         assert not host._sleep_pending
         return "pending sleep is cancelled when a farmer leaves the house"
     check("sleep: cancelled if a farmer walks out before it begins", sleep_cancels_if_someone_leaves)
+
+    def home_furniture_for_client():
+        """Fridge / TV / seat / wardrobe all work from the client's screen."""
+        host.warp_player(0, AREA_HOME, (6, 5))
+        host.warp_player(1, AREA_HOME, (5, 5))
+        host.state = "play"
+        assert until(lambda: client.world.current == AREA_HOME, limit=240)
+        cp2 = client.players[1]
+        hfr = next(q for q in host.world.home_furniture if q.kind == "fridge")
+        hfr.store.update({"fried_egg": 1})
+        hp2.inv.add("parsnip", 2)
+        host._net_world_t = 99.0
+        assert until(lambda: cp2.inv.count("parsnip") >= 2, limit=240), "bag never synced"
+        # fridge: put a parsnip in, eat the fried egg
+        cfr = next(q for q in client.world.home_furniture if q.kind == "fridge")
+        client._open_fridge(1, cfr, client=True)
+        assert client.state == "fridge"
+        before_p, before_e = hfr.store.get("parsnip", 0), hp2.energy
+        hp2.energy = 10
+        client._fridge_op(1, client.fridge_menu.fr, "put", "parsnip", 1, client=True)
+        client._fridge_op(1, client.fridge_menu.fr, "eat", "fried_egg", 1, client=True)
+        assert until(lambda: hfr.store.get("parsnip", 0) == before_p + 1
+                     and "fried_egg" not in hfr.store, limit=240), hfr.store
+        assert hp2.energy > 10, "eating from the fridge gave no energy"
+        client.fridge_menu.close()
+        frames(30)
+        assert client.state == "play", client.state
+        # TV: switching it on from the client flips the host's set
+        htv = next(q for q in host.world.home_furniture if q.kind == "tv")
+        htv.on = False
+        host._net_world_t = 99.0
+        assert until(lambda: not next(q for q in client.world.home_furniture
+                                      if q.kind == "tv").on, limit=240)
+        ctv = next(q for q in client.world.home_furniture if q.kind == "tv")
+        assert client._home_client_interact(cp2, ctv) is True and client.state == "tv"
+        assert until(lambda: htv.on, limit=120), "host TV never switched on"
+        client.tv_screen._leave(power_off=True)
+        assert until(lambda: client.state == "play" and not htv.on, limit=240), \
+            "powering off on the client never reached the host"
+        # seat: the host sits P2 down and the client sees it
+        sofa = next(q for q in host.world.home_furniture if q.kind == "sofa")
+        place(hp2, sofa.gx, sofa.gy + 1)
+        hp2.fx, hp2.fy = 0, -1
+        frames(10)
+        client._client_capture_key(CK["action"])
+        assert until(lambda: getattr(hp2, "sitting", None) is not None, limit=120), \
+            "host never seated P2"
+        assert until(lambda: getattr(cp2, "sitting", None) is not None, limit=120), \
+            "client never saw P2 seated"
+        hp2.sitting = None
+        assert until(lambda: getattr(cp2, "sitting", None) is None, limit=120)
+        # wardrobe: a new shirt reaches the host's P2
+        shirt = hp2.appearance.get("shirt_color", 0)
+        client._open_wardrobe(1, "wardrobe", client=True)
+        client.wardrobe.handle_key(CK["right"])
+        client.wardrobe.handle_key(CK["action"])
+        assert until(lambda: hp2.appearance.get("shirt_color", 0) != shirt, limit=120), \
+            "outfit change never reached the host"
+        return "fridge put/eat, TV on/off, sofa seat and outfit all sync"
+    check("home: fridge, TV, seats and wardrobe work for the client", home_furniture_for_client)
+
+    def piano_and_records_over_lan():
+        """Each farmer hears the other's piano; the client's record player is
+        switched on/off through the host and only ever drives the CLIENT's
+        Spotify (safety-gated here: nothing external really happens)."""
+        from src import furniture as F, piano as PN, spotify as SP
+        assert SP.gated(), "Spotify safety gate is OFF in the online test"
+        host.warp_player(0, AREA_HOME, (6, 5))
+        host.warp_player(1, AREA_HOME, (5, 5))
+        host.state = "play"
+        pn = next((q for q in host.world.home_furniture if q.kind == "piano"), None)
+        if pn is None:
+            pn = F.Placed("piano", 7, 2, 0, 10)
+            host.world.home_furniture.append(pn)
+        rp = next((q for q in host.world.home_furniture if q.kind == "record_player"), None)
+        if rp is None:
+            rp = F.Placed("record_player", 3, 6, 0, 8)
+            host.world.home_furniture.append(rp)
+        rp.on = False
+        host._net_world_t = 99.0
+        assert until(lambda: client.world.current == AREA_HOME and
+                     any(q.kind == "piano" for q in client.world.home_furniture) and
+                     any(q.kind == "record_player" and not q.on
+                         for q in client.world.home_furniture), limit=300)
+        ev = pygame.event.Event
+        # --- piano: client plays, host hears
+        hsyn = PN.synth(host.audio)
+        heard = []
+        orig = hsyn.note_on
+        hsyn.note_on = lambda key, midi, vel=1.0: (heard.append(midi), orig(key, midi, vel))[1]
+        try:
+            cpn = next(q for q in client.world.home_furniture if q.kind == "piano")
+            assert client._home_client_interact(client.players[1], cpn) is True
+            assert client.state == "piano", client.state
+            client._run_state("event", ev(pygame.KEYDOWN, key=pygame.K_q, mod=0,
+                                          unicode="", scancode=0))
+            assert until(lambda: 60 in heard, limit=120), f"host never heard C4: {heard}"
+            client._run_state("event", ev(pygame.KEYUP, key=pygame.K_q, mod=0,
+                                          unicode="", scancode=0))
+            client._run_state("event", ev(pygame.KEYDOWN, key=pygame.K_ESCAPE, mod=0,
+                                          unicode="", scancode=0))
+            frames(30)
+            assert client.state == "play", client.state
+        finally:
+            hsyn.note_on = orig
+        # --- record player: the client's press flips the HOST's piece
+        calls0 = len(SP.CALLS)
+        crp = next(q for q in client.world.home_furniture if q.kind == "record_player")
+        assert client._home_client_interact(client.players[1], crp) is True
+        assert client.state == "records", client.state
+        assert until(lambda: rp.on, limit=240), "host record player never switched on"
+        assert not getattr(host, "records_active", False), "host listens because of the client"
+        client.records_screen.handle_key(pygame.K_x)
+        assert until(lambda: not rp.on, limit=240), "client's X never reached the host"
+        frames(10)
+        assert client.state in ("play", "records"), client.state
+        if client.state == "records":
+            client.records_screen.handle_key(pygame.K_ESCAPE)
+        return f"piano heard on host; record player on/off via host; gated calls {SP.CALLS[calls0:]}"
+    check("home: piano + record player over LAN", piano_and_records_over_lan)
+
+    def sit_beside_busy_host():
+        """P1 watches TV on the host; the client's press on the sofa still
+        seats Player 2 (it used to be dropped while P1 had a screen open)."""
+        from src import furniture as F
+        host.warp_player(0, AREA_HOME, (6, 5))
+        host.warp_player(1, AREA_HOME, (5, 5))
+        host.state = "play"
+        hp2.sitting = hp1.sitting = None
+        sofa = next(q for q in host.world.home_furniture if q.kind == "sofa")
+        tvp = next(q for q in host.world.home_furniture if q.kind == "tv")
+        host._open_tv(0, tvp)
+        assert host.state == "tv", host.state
+        fw, fh = F.footprint(sofa.kind, sofa.rot)
+        f = ((0, 1), (-1, 0), (0, -1), (1, 0))[sofa.rot % 4]
+        place(hp2, sofa.gx + (fw - 1) * max(0, f[0]) + f[0], sofa.gy + (fh - 1) * max(0, f[1]) + f[1])
+        hp2.fx, hp2.fy = -f[0], -f[1]
+        frames(15)
+        client._client_capture_key(CK["action"])
+        assert until(lambda: getattr(hp2, "sitting", None) is not None, limit=120),             "P2's seat press was dropped while P1 watched TV"
+        assert host.state == "tv", f"P1's TV screen was taken over: {host.state}"
+        assert until(lambda: getattr(client.players[1], "sitting", None) is not None, limit=120)
+        host.tv_screen._leave(power_off=False)
+        hp2.sitting = None
+        frames(10)
+        return "P2 sat on the sofa while P1 kept watching TV"
+    check("home: partner sits down while the host watches TV", sit_beside_busy_host)
 
     def heart_event_never_hijacks_p1():
         host.warp_player(0, AREA_FARM, (12, 12))

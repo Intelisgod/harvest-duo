@@ -832,10 +832,17 @@ class World:
         self.areas[AREA_MINE] = build_mine(level)
 
     def furniture_at(self, gx, gy):
+        """The piece to interact with on a cell: the newest real piece there,
+        a rug only when nothing stands on it (a chair on a rug is sat on, the
+        rug is never 'straightened' instead)."""
+        from . import furniture as _F
+        rug = None
         for pl in reversed(self.home_furniture):
             if (gx, gy) in pl.cells():
-                return pl
-        return None
+                if _F.CAT[pl.kind]["layer"] != "floor":
+                    return pl
+                rug = rug or pl
+        return rug
 
     def refresh_home_solids(self):
         """Recompute which home cells block movement (non-floor furniture + bed)."""

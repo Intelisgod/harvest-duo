@@ -45,6 +45,13 @@ Name your hooks ``<prefix><domain>_<what>`` so they never collide.
                                                         (screen-wide effects: lightning flash)
   _draw_hud_                 ()                         after the HUD (screen space)
   _on_event_                 (event, data)              every self.emit(event, **data)
+  _lights_                   () -> [(wx, wy, r, rgb)]   extra night glows (lamps, fires...)
+  _net_menu_                 (mm, m) -> bool            LAN host: a client "menu" op that
+                                                        Core doesn't know (fridge, outfit...)
+  _net_snap_out_             () -> dict                 LAN host: merged into each snapshot
+  _net_snap_in_              (d)                        LAN client: read your snapshot keys
+  _net_fx_                   (m) -> bool                LAN client: a host fx message whose
+                                                        kind isn't "boom" (self._net_send_fx)
 
 CUSTOM STATES (new full-screen menus / overlays) -- for ``self.state = "<name>"``:
   _state_event_<name>(e)     pygame event routing while in that state
