@@ -30,6 +30,7 @@ from .areactx_system import AreaCtxMixin
 from .home_system import HomeMixin
 from .piano_system import PianoMixin
 from .records_system import RecordsMixin
+from .showpiece_system import ShowpieceMixin
 
 __all__ = [
     "SaveMixin", "ActionsMixin", "CombatMixin", "FarmMixin", "FishingMixin",

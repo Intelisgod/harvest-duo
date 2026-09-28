@@ -48,6 +48,7 @@ HEIGHT = {
     "toy_chest": 18, "sink": 24, "microwave": 40, "kitchen_island": 27,
     "easel": 48, "globe": 36, "cat_tower": 40, "standing_fan": 44,
 }
+HEIGHT.update({"telescope": 58, "arcade_cabinet": 66})     # showpieces (2026-09-28)
 
 
 def _box(surf, P, x0, y0, x1, y1, h, color, base=0, faces=True):
@@ -142,6 +143,33 @@ def _tv_art(surf, quad):
         _hooks._log_hook_error("_tv_world_art")
         if _hooks._STRICT:
             raise
+
+
+# optional lookup for a piece's own artwork: fn(kind, gx, gy) -> art string or
+# None -- set by systems/showpiece_system.py so an easel shows its painting
+PIECE_ART = None
+
+
+def _piece_art(kind, gx, gy):
+    if PIECE_ART is None:
+        return None
+    try:
+        return PIECE_ART(kind, gx, gy)
+    except Exception:
+        from .systems import hooks as _hooks    # logged / strict like any hook
+        _hooks._log_hook_error("_show_piece_art")
+        if _hooks._STRICT:
+            raise
+        return None
+
+
+def _heart_px(surf, c, r, col):
+    """A tiny heart (r ~ half its width) centred on screen point c."""
+    x, y = c
+    pygame.draw.circle(surf, col, (int(x - r * 0.5), int(y - r * 0.3)), max(1, int(r * 0.6)))
+    pygame.draw.circle(surf, col, (int(x + r * 0.5), int(y - r * 0.3)), max(1, int(r * 0.6)))
+    pygame.draw.polygon(surf, col, [(x - r * 1.05, y - r * 0.15), (x + r * 1.05, y - r * 0.15),
+                                    (x, y + r * 1.05)])
 
 
 def _item_tint(name):
@@ -680,24 +708,58 @@ def draw(surf, P, gx, gy, fw, fh, kind, color, rot=0, on=False, extra_ops=None,
         op(x1 - 0.70, (y0 + y1) / 2 - 0.15, x1 - 0.40, (y0 + y1) / 2 + 0.15,
            h + 3, h + 11, _bowl)
 
-    elif kind == "easel":
-        def _fn():
-            apex = _up(P((x0 + x1) / 2, y0 + 0.40 * (y1 - y0)), 44)
-            f1 = P(x0 + 0.22, y1 - 0.26)
-            f2 = P(x1 - 0.22, y1 - 0.26)
-            bk = P((x0 + x1) / 2, y0 + 0.14)
-            for ft in (f1, f2, bk):                                               # tripod legs
-                pygame.draw.line(surf, _dk(wood, 0.75), ft, apex, 3)
-            ca, cb = _mid(f1, apex, 0.26), _mid(f2, apex, 0.26)                   # canvas
-            ct, cu = _mid(f1, apex, 0.80), _mid(f2, apex, 0.80)
-            quad = [ca, cb, cu, ct]
-            pygame.draw.polygon(surf, (246, 244, 238) if vy1 else (214, 204, 188), quad)
-            pygame.draw.polygon(surf, _dk(wood, 0.7), quad, 2)
-            if vy1:                                                               # paint daubs
-                for t, cc in ((0.36, (208, 96, 90)), (0.52, (96, 150, 210)), (0.66, (228, 196, 92))):
-                    c = _mid(_mid(ca, cb, t), _mid(ct, cu, t + 0.05), 0.5)
-                    pygame.draw.circle(surf, cc, (int(c[0]), int(c[1])), 3)
-        op(x0 + 0.12, y0 + 0.10, x1 - 0.12, y1 - 0.12, 0, 48, _fn)
+    elif kind == "easel":                     # A-frame studio easel + its canvas
+        art = _piece_art("easel", gx, gy)
+        legc = _dk(wood, 0.82)
+        cx = (x0 + x1) / 2.0
+        apex = (cx, y0 + 0.40, 54)
+        legs = ((x0 + 0.13, y0 + 0.44), (x1 - 0.13, y0 + 0.44), (cx, y0 + 0.08))
+
+        def _legs():                            # all three legs stand BEHIND the canvas
+            top = _up(P(apex[0], apex[1]), apex[2])
+            for fx_, fy_ in legs:
+                pygame.draw.line(surf, _dk(legc, 0.7), P(fx_, fy_), top, 4)
+                pygame.draw.line(surf, legc, P(fx_, fy_), top, 2)
+            k = _up(P(cx, y0 + 0.40), 28)       # the wing nut where the legs cross
+            pygame.draw.circle(surf, metal, (int(k[0]), int(k[1])), 2)
+        op(x0 + 0.10, y0 + 0.06, x1 - 0.10, y0 + 0.47, 0, 55, _legs)
+        box(x0 + 0.05, y0 + 0.48, x1 - 0.05, y0 + 0.66, 3, wood, base=14)           # ledge
+        cz0, cz1 = 17, 47
+        cxa, cxb = x0 + 0.06, x1 - 0.06
+        canvas_col = (246, 244, 238)
+
+        def _cv(tp):
+            if vy1:                                                  # the painted side
+                fp = _yface(P, y0 + 0.56, cxa, cxb, cz1 - cz0, base=cz0)
+                quad = [fp(0, 0), fp(1, 0), fp(1, 1), fp(0, 1)]
+                pygame.draw.polygon(surf, canvas_col, quad)
+                painted = False
+                if art:
+                    from . import studio
+                    painted = studio.draw_on_face(surf, fp(0.03, 0.035), fp(0.97, 0.035),
+                                                  fp(0.03, 0.965), art)
+                if not painted:                                      # a bare, daubed canvas
+                    for t, cc in ((0.30, (208, 96, 90)), (0.50, (96, 150, 210)),
+                                  (0.70, (228, 196, 92))):
+                        c = fp(t, 0.36 + 0.14 * math.sin(t * 9))
+                        pygame.draw.circle(surf, cc, (int(c[0]), int(c[1])), 3)
+                pygame.draw.polygon(surf, _dk(canvas_col, 0.62), quad, 1)
+            else:                                                    # stretcher bars behind
+                fp = _yface(P, y0 + 0.50, cxa, cxb, cz1 - cz0, base=cz0)
+                quad = [fp(0, 0), fp(1, 0), fp(1, 1), fp(0, 1)]
+                pygame.draw.polygon(surf, (222, 212, 194), quad)
+                bar = _lt(wood, 1.12)
+                for a_, b_ in (((0.04, 0.05), (0.96, 0.05)), ((0.04, 0.95), (0.96, 0.95)),
+                               ((0.04, 0.05), (0.04, 0.95)), ((0.96, 0.05), (0.96, 0.95)),
+                               ((0.5, 0.05), (0.5, 0.95)), ((0.04, 0.5), (0.96, 0.5))):
+                    pygame.draw.line(surf, bar, fp(*a_), fp(*b_), 2)
+                pygame.draw.polygon(surf, _dk(wood, 0.6), quad, 1)
+        box(cxa, y0 + 0.50, cxb, y0 + 0.56, cz1 - cz0, canvas_col, base=cz0, decor=_cv)
+        box(cx - 0.07, y0 + 0.49, cx + 0.07, y0 + 0.57, 5, wood, base=cz1)            # top clamp
+        for i, (ta, tc) in enumerate(((x0 + 0.14, (220, 92, 96)), (x0 + 0.27, (96, 150, 210)),
+                                      (x1 - 0.30, (246, 214, 124)))):
+            box(ta, y0 + 0.58, ta + 0.09 + 0.02 * (i == 2), y0 + 0.63, 2 + (i == 2) * 2, tc,
+                base=17)                                                          # paint tubes
 
     elif kind == "globe":
         def _fn():
@@ -756,6 +818,161 @@ def draw(surf, P, gx, gy, fw, fh, kind, color, rot=0, on=False, extra_ops=None,
             pygame.draw.circle(surf, (120, 124, 132), (int(hc[0]), int(hc[1])), 11, 2)  # cage
             pygame.draw.circle(surf, (70, 72, 80), (int(hc[0]), int(hc[1])), 2)         # hub
         op(x0 + 0.28, y0 + 0.28, x1 - 0.28, y1 - 0.28, 4, 52, _fn)
+
+    elif kind == "telescope":                 # brass refractor on a wooden tripod
+        brass = (214, 170, 84)
+        cx, cy = (x0 + x1) / 2.0, (y0 + y1) / 2.0
+        head = 27
+        feet = [(cx + 0.36 * math.cos(a_), cy + 0.36 * math.sin(a_))
+                for a_ in (math.radians(100), math.radians(220), math.radians(340))]
+
+        def _tripod():
+            top = _up(P(cx, cy), head)
+            for fx_, fy_ in sorted(feet, key=lambda f: sum(to_real(*f))):
+                ft = P(fx_, fy_)
+                pygame.draw.line(surf, _dk(wood, 0.6), ft, top, 4)
+                pygame.draw.line(surf, _lt(wood, 1.05), ft, top, 2)
+                pygame.draw.circle(surf, _dk(wood, 0.5), (int(ft[0]), int(ft[1])), 2)
+            sp = [_up(P(fx_ * 0.55 + cx * 0.45, fy_ * 0.55 + cy * 0.45), 11) for fx_, fy_ in feet]
+            pygame.draw.lines(surf, _dk(wood, 0.7), True, sp, 1)          # spreader chain
+        op(x0 + 0.08, y0 + 0.08, x1 - 0.08, y1 - 0.08, 0, head, _tripod)
+        box(cx - 0.09, cy - 0.09, cx + 0.09, cy + 0.09, 5, (96, 92, 104), base=head)  # mount head
+
+        def _tube():
+            # the tube leans up toward canonical -y (the back wall at rot 0)
+            e3, o3 = (cx, cy + 0.30, head + 7), (cx, cy - 0.36, head + 31)
+            E, O = _up(P(e3[0], e3[1]), e3[2]), _up(P(o3[0], o3[1]), o3[2])
+            dx, dy = O[0] - E[0], O[1] - E[1]
+            ln = math.hypot(dx, dy) or 1.0
+            nx, ny = -dy / ln, dx / ln
+            if ny > 0:                                  # n points up the screen: the lit side
+                nx, ny = -nx, -ny
+
+            def at(t, off):
+                return (E[0] + dx * t + nx * off, E[1] + dy * t + ny * off)
+
+            def rad(t):
+                return 3.4 + 2.4 * t
+            body = [at(0, rad(0)), at(0.82, rad(0.82)), at(0.82, -rad(0.82)), at(0, -rad(0))]
+            pygame.draw.polygon(surf, brass, body)
+            shade = [at(0, -rad(0) * 0.25), at(0.82, -rad(0.82) * 0.25),
+                     at(0.82, -rad(0.82)), at(0, -rad(0))]
+            pygame.draw.polygon(surf, _dk(brass, 0.78), shade)            # the unlit underside
+            pygame.draw.line(surf, _lt(brass, 1.3), at(0.04, rad(0.04) * 0.55),
+                             at(0.78, rad(0.78) * 0.55), 2)               # specular stripe
+            dew = [at(0.80, rad(1.0)), at(1.0, rad(1.0)), at(1.0, -rad(1.0)), at(0.80, -rad(1.0))]
+            pygame.draw.polygon(surf, color, dew)                          # dew shield (colour)
+            pygame.draw.polygon(surf, _dk(color, 0.55), dew, 1)
+            pygame.draw.line(surf, _lt(color, 1.25), at(0.82, rad(1.0) * 0.5),
+                             at(0.98, rad(1.0) * 0.5), 1)
+            pygame.draw.polygon(surf, _dk(brass, 0.5), body, 1)
+            for t in (0.28, 0.56):                                         # brass rings
+                pygame.draw.line(surf, _dk(brass, 0.6), at(t, rad(t) + 1), at(t, -rad(t) - 1), 2)
+            f0, f1 = at(0.36, rad(0.36) + 3.2), at(0.66, rad(0.66) + 3.2)  # finder scope
+            pygame.draw.line(surf, _dk(color, 0.6), f0, f1, 4)
+            pygame.draw.line(surf, color, f0, f1, 2)
+            for t in (0.42, 0.60):
+                pygame.draw.line(surf, _dk(brass, 0.6), at(t, rad(t)), at(t, rad(t) + 3), 1)
+            ep = at(-0.10, 0)                                              # eyepiece
+            pygame.draw.line(surf, (46, 42, 50), at(0, 0), ep, 5)
+            pygame.draw.circle(surf, (30, 28, 34), (int(ep[0]), int(ep[1])), 2)
+            kn = at(0.06, -rad(0.06) - 2)                                  # focus knob
+            pygame.draw.circle(surf, _dk(brass, 0.6), (int(kn[0]), int(kn[1])), 2)
+            re, ro = to_real(e3[0], e3[1]), to_real(o3[0], o3[1])
+            if (ro[0] - re[0]) + (ro[1] - re[1]) > 0:   # aimed at the camera: see the lens
+                c_ = at(1.0, 0)
+                r_ = int(rad(1.0))
+                pygame.draw.circle(surf, _dk(color, 0.5), (int(c_[0]), int(c_[1])), r_ + 1)
+                pygame.draw.circle(surf, (40, 60, 96), (int(c_[0]), int(c_[1])), r_ - 1)
+                pygame.draw.circle(surf, (170, 206, 240), (int(c_[0] - 1), int(c_[1] - 2)), 1)
+            m = _up(P(cx, cy), head + 5)                                   # saddle clamp
+            pygame.draw.rect(surf, (80, 76, 88), (m[0] - 3, m[1] - 5, 6, 6), border_radius=1)
+        op(cx - 0.12, cy - 0.40, cx + 0.12, cy + 0.34, head + 5, head + 36, _tube)
+
+    elif kind == "arcade_cabinet":             # upright arcade cabinet (front = +y)
+        body = color
+        trim = _dk(color, 0.55)
+        t_ms = pygame.time.get_ticks()
+
+        def _lower(tp):
+            if vy1:                                                  # coin door
+                fp = _yface(P, y0 + 0.74, x0 + 0.14, x1 - 0.14, 22)
+                door = [fp(0.30, 0.22), fp(0.70, 0.22), fp(0.70, 0.86), fp(0.30, 0.86)]
+                pygame.draw.polygon(surf, _dk(body, 0.62), door)
+                pygame.draw.polygon(surf, _dk(body, 0.4), door, 1)
+                for u in (0.40, 0.60):
+                    q = [fp(u - 0.04, 0.34), fp(u + 0.04, 0.34), fp(u + 0.04, 0.50),
+                         fp(u - 0.04, 0.50)]
+                    pygame.draw.polygon(surf, (255, 170, 80) if on else (120, 90, 70), q)
+            if vx1:                                                  # side art: a heart
+                fp = _rface(P, x1 - 0.14, y0 + 0.12, y0 + 0.74, 22)
+                _heart_px(surf, fp(0.5, 0.45), 5, _lt(body, 1.35))
+        box(x0 + 0.14, y0 + 0.12, x1 - 0.14, y0 + 0.74, 22, body, decor=_lower)
+
+        def _panel(tp):
+            j = _up(P(x0 + 0.34, y0 + 0.83), 27)                     # joystick
+            pygame.draw.line(surf, (40, 40, 48), j, (j[0], j[1] - 7), 2)
+            pygame.draw.circle(surf, (226, 70, 80), (int(j[0]), int(j[1] - 8)), 3)
+            pygame.draw.circle(surf, (255, 170, 170), (int(j[0] - 1), int(j[1] - 9)), 1)
+            for bx_, bc in ((x1 - 0.40, (255, 120, 170)), (x1 - 0.26, (250, 214, 110))):
+                b = _up(P(bx_, y0 + 0.83), 27)
+                pygame.draw.ellipse(surf, _dk(bc, 0.6), (b[0] - 3, b[1] - 1, 6, 3))
+                pygame.draw.ellipse(surf, bc, (b[0] - 3, b[1] - 2, 6, 3))
+        box(x0 + 0.10, y0 + 0.74, x1 - 0.10, y0 + 0.92, 5, trim, base=22, decor=_panel)
+        box(x0 + 0.14, y0 + 0.12, x1 - 0.14, y0 + 0.74, 4, body, base=22)   # panel's backing
+
+        def _upper(tp):
+            if vy1:
+                fp = _yface(P, y0 + 0.66, x0 + 0.14, x1 - 0.14, 30, base=26)
+                bez = [fp(0.07, 0.06), fp(0.93, 0.06), fp(0.93, 0.80), fp(0.07, 0.80)]
+                pygame.draw.polygon(surf, (26, 22, 32), bez)
+                scr = [fp(0.13, 0.12), fp(0.87, 0.12), fp(0.87, 0.72), fp(0.13, 0.72)]
+                if on:                                               # Heart Pong attract mode
+                    pygame.draw.polygon(surf, (58, 34, 84), scr)
+                    ph = (t_ms % 2400) / 2400.0
+                    u = 0.2 + 0.6 * (ph * 2 if ph < 0.5 else 2 - ph * 2)
+                    v = 0.25 + 0.35 * abs(math.sin(ph * math.pi * 3))
+                    for pu, pv in ((0.20, 0.30 + 0.2 * v), (0.80, 0.55 - 0.2 * v)):
+                        pygame.draw.line(surf, (255, 190, 220), fp(pu, pv - 0.10),
+                                         fp(pu, pv + 0.10), 2)
+                    for k in range(4):
+                        d_ = fp(0.5, 0.18 + k * 0.14)
+                        surf.set_at((int(d_[0]), int(d_[1])), (160, 120, 200))
+                    _heart_px(surf, fp(u, v), 2, (255, 110, 160))
+                    pygame.draw.line(surf, (200, 170, 255), fp(0.18, 0.16), fp(0.40, 0.16), 1)
+                else:                                                # dark glass
+                    pygame.draw.polygon(surf, (40, 42, 52), scr)
+                    pygame.draw.line(surf, (90, 96, 112), fp(0.20, 0.22), fp(0.42, 0.22), 1)
+                pygame.draw.polygon(surf, (14, 12, 18), scr, 1)
+                a_, b_ = fp(0.30, 0.86), fp(0.70, 0.86)              # speaker grille
+                for s_ in range(3):
+                    pygame.draw.line(surf, _dk(body, 0.5), (a_[0], a_[1] + s_ * 2),
+                                     (b_[0], b_[1] + s_ * 2), 1)
+            if vx1:                                                  # a racing stripe
+                fp = _rface(P, x1 - 0.14, y0 + 0.12, y0 + 0.66, 30, base=26)
+                pygame.draw.line(surf, _lt(body, 1.3), fp(0.1, 0.9), fp(0.9, 0.2), 3)
+            if not vy1:                                              # the back: vent slats
+                fp = _yface(P, y0 + 0.12, x0 + 0.14, x1 - 0.14, 30, base=26)
+                for k in range(4):
+                    v = 0.22 + k * 0.1
+                    pygame.draw.line(surf, _dk(body, 0.55), fp(0.28, v), fp(0.72, v), 2)
+        box(x0 + 0.14, y0 + 0.12, x1 - 0.14, y0 + 0.66, 30, body, base=26, decor=_upper)
+
+        def _marquee(tp):
+            if vy1:
+                fp = _yface(P, y0 + 0.74, x0 + 0.10, x1 - 0.10, 10, base=56)
+                q = [fp(0.06, 0.16), fp(0.94, 0.16), fp(0.94, 0.84), fp(0.06, 0.84)]
+                lit = on
+                pygame.draw.polygon(surf, (255, 222, 236) if lit else (150, 128, 140), q)
+                hc = (236, 80, 130) if lit else (110, 80, 96)
+                _heart_px(surf, fp(0.22, 0.52), 2, hc)
+                _heart_px(surf, fp(0.78, 0.52), 2, hc)
+                pygame.draw.line(surf, hc, fp(0.36, 0.52), fp(0.64, 0.52), 2)
+            elif on:                                                 # screen hidden: glow rim
+                tq = [_up(P(x0 + 0.10, y0 + 0.12), 66), _up(P(x1 - 0.10, y0 + 0.12), 66),
+                      _up(P(x1 - 0.10, y0 + 0.74), 66), _up(P(x0 + 0.10, y0 + 0.74), 66)]
+                pygame.draw.lines(surf, (255, 150, 210), True, tq, 2)
+        box(x0 + 0.10, y0 + 0.12, x1 - 0.10, y0 + 0.74, 10, trim, base=56, decor=_marquee)
 
     else:                                      # generic cabinet / fallback
         h = HEIGHT.get(kind, 22)
