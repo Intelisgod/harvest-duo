@@ -185,7 +185,7 @@ class SaveMixin:
             if fd.get("kind") not in F.CAT:        # skip unknown furniture kinds
                 continue
             args = {k: fd[k] for k in ("kind", "gx", "gy", "rot", "ci", "level",
-                                       "store", "ox", "oy", "on") if k in fd}
+                                       "store", "ox", "oy", "on", "data") if k in fd}
             try:
                 w.home_furniture.append(F.Placed(**args))
             except Exception:

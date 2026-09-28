@@ -108,17 +108,50 @@ CATEGORIES = ["Living", "Bedroom", "Kitchen", "Decor", "Crafting", "Tabletop"]
 SURFACES = {"dining_table", "coffee_table", "counter", "kitchen_island",
             "dresser", "nightstand", "vanity",
             "piano", "aquarium", "fireplace", "bookshelf", "wardrobe"}
-# quarter-cell anchor points for up to 4 tabletop items on one cell
-TOP_SLOTS = ((-0.22, -0.22), (0.22, -0.22), (-0.22, 0.22), (0.22, 0.22))
-# per-kind overrides where only part of the top is usable
-SURFACE_SLOTS = {
-    "piano": ((-0.22, -0.26), (0.22, -0.26)),   # on the lid only, never the keys
+# ---- tabletop placement (free-form, 2026-09-28) ----
+# The usable top of each surface kind, as a rect in the piece's CANONICAL
+# (rot 0) footprint space, in tiles: (x0, y0, x1, y1). Items may sit anywhere
+# inside it (minus their own radius). Default = the whole top, a hair inset.
+SURFACE_TOP = {
+    "piano": (0.08, 0.06, None, 0.46),      # the lid only, never the keys
+    "fireplace": (0.06, 0.08, None, 0.60),  # the mantel shelf
+    "bookshelf": (0.08, 0.08, None, None),
+    "wardrobe": (0.08, 0.08, None, None),
+    "aquarium": (0.10, 0.10, None, None),
 }
+SURFACE_INSET = 0.07
+# footprint radius (tiles) of each tabletop item: they never overlap, and they
+# stay this far inside the surface edge. Unlisted kinds use TOP_RADIUS_DEFAULT.
+TOP_RADIUS = {
+    "paper_stack": 0.16, "music_sheet": 0.15, "book_stack": 0.14,
+    "fruit_bowl": 0.13, "desk_mirror": 0.11, "photo_frame": 0.10,
+    "desk_lamp": 0.10, "vase_flowers": 0.09, "pen_holder": 0.08,
+    "candle_small": 0.07, "coffee_mug": 0.07, "cactus_small": 0.07,
+}
+TOP_RADIUS_DEFAULT = 0.11
+# how fine free placement snaps (tiles); Shift in Build mode = no snapping
+TOP_SNAP = 0.0625
+
+
+# (legacy quarter-cell slots -- kept until Build's free placement lands)
+TOP_SLOTS = ((-0.22, -0.22), (0.22, -0.22), (-0.22, 0.22), (0.22, 0.22))
 
 
 def surface_slots(kind):
-    """Anchor slots tabletop decor may occupy on this surface kind."""
-    return SURFACE_SLOTS.get(kind, TOP_SLOTS)
+    return TOP_SLOTS
+
+
+def top_radius(kind):
+    return TOP_RADIUS.get(kind, TOP_RADIUS_DEFAULT)
+
+
+def surface_top_rect(kind, fw, fh):
+    """Canonical usable top rect of a `kind` whose canonical footprint is
+    (fw, fh) tiles -- None entries in SURFACE_TOP mean 'full extent'."""
+    x0, y0, x1, y1 = SURFACE_TOP.get(kind, (None, None, None, None))
+    i = SURFACE_INSET
+    return (i if x0 is None else x0, i if y0 is None else y0,
+            fw - i if x1 is None else x1, fh - i if y1 is None else y1)
 
 
 # seats the players can actually SIT on (interact -> sit, move/action -> stand).
@@ -539,10 +572,10 @@ def icon(item_id, color, size=40):
 
 class Placed:
     __slots__ = ("kind", "gx", "gy", "rot", "ci", "level", "store", "ox", "oy",
-                 "on")
+                 "on", "data")
 
     def __init__(self, kind, gx, gy, rot=0, ci=0, level=1, store=None,
-                 ox=0.0, oy=0.0, on=False):
+                 ox=0.0, oy=0.0, on=False, data=None):
         self.kind = kind
         self.gx = gx
         self.gy = gy
@@ -555,6 +588,9 @@ class Placed:
         self.ox = ox
         self.oy = oy
         self.on = bool(on)    # appliance/light power state (TOGGLE kinds)
+        # free-form per-piece state for functional furniture (a painted canvas,
+        # the fish in a tank, a plant's growth...). JSON-safe values only.
+        self.data = dict(data) if data else {}
 
     @property
     def color(self):
@@ -585,6 +621,8 @@ class Placed:
             d["oy"] = self.oy
         if self.on:
             d["on"] = True
+        if self.data:
+            d["data"] = dict(self.data)
         return d
 
 

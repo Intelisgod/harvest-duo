@@ -801,8 +801,10 @@ def surface_height(kind):
     return TOPH.get(kind, 0)
 
 
-def draw_top(surf, P, x, y, kind, color, base, on=False):
-    """Draw one tabletop item centred on tile point (x, y), `base` px up."""
+def draw_top(surf, P, x, y, kind, color, base, on=False, rot=0):
+    """Draw one tabletop item centred on tile point (x, y), `base` px up.
+    `rot` (0-3 quarter turns) turns items that have a front (frames, lamps,
+    mirrors, mugs...): 0 faces +y (camera-left), 1 +x... like furniture."""
     c = _up(P(x, y), base)
     cx, cy = int(c[0]), int(c[1])
     wood = (150, 110, 70)
