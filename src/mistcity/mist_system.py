@@ -1175,6 +1175,9 @@ class MistMixin:
     def mist_enter(self, event=None):
         if getattr(self, "mist_run", None) or self.state == "mistcity":
             return
+        f = getattr(self, "together_needed", None)
+        if f and f("Mist City"):
+            return                   # online: both must stand at the forest gate
         self._mist_return = (self.world.current,
                              [(p.x, p.y) for p in self.players])
         self.mist_run = MistRun(self, event=event)
@@ -1198,7 +1201,11 @@ class MistMixin:
             return
         area, pos = getattr(self, "_mist_return",
                             (self.world.current, None))
+        if getattr(self, "p_area", None) is not None and self.world.current != area:
+            self._ctx_store = {}                     # both come home to the same area
         self.world.current = area
+        if getattr(self, "p_area", None) is not None:
+            self.p_area = [area, area]
         ret = getattr(self.world.area, "mist_return", None)
         if ret:                                  # forest anchor next to the gate
             from ..settings import TILE

@@ -86,3 +86,26 @@ contract** — read it fully before touching code.
 | **World (5)** | `world.py`, `systems/world_system.py`, `build.py`, `isofurn.py`, `homeiso.py`, `furniture.py`, `storage.py`, `creator.py` | farm beautification, flower meadow area, outdoor decor mode, abyss/ruins biomes + hazards, restoration board placement |
 | **UI (6)** | `systems/render_system.py`, `systems/ui_system.py`, `ui.py`, `menu.py`, `gallery.py`, `inventory_screen.py`, `assets/*` | journal screen, HUD overhaul + toasts, animated title screen, world render polish, warp transition + area title cards |
 | **Mist City (7)** | `src/mistcity/*` | V2: second zone, random events, Bell Keeper boss, run records |
+
+## 3. Online: each farmer on their own map (2026-09-28)
+
+In LAN play (host + client) the two farmers now roam **independently**, like a
+normal online game: separate areas, separate cameras, separate monsters and
+villagers, and Player 1's menus (even the pause menu) no longer freeze Player 2.
+Local co-op on one screen is unchanged: both stay together (plus a new camera
+leash so nobody can walk off the shared screen).
+
+Core: `systems/areactx_system.py` (`AreaCtxMixin`). Rules every domain must follow:
+
+| Topic | Contract |
+|---|---|
+| Where is everyone | `self.p_area[i]` = area of player i. `self.world.current` = the area being **simulated right now** (between frames: the view area = Player 1's on the host). `self.independent()` is True on the LAN host. |
+| Per-frame hooks | `_on_update_<x>` runs **once per frame** in the view area (global timers, HUD, weather). `_on_area_update_<x>` runs **once per occupied area** inside that area's context (monsters, critters, hazards, per-area fx). Per-player work inside an area hook loops over `self.players_here()`. |
+| Per-area state | Anything reset on area entry (`_spawn_area_entities` / `_on_area_enter_*`) must be listed in `areactx_system.AREA_LOCAL` so each occupied area keeps its own copy. |
+| Absent farmer | Inside a context, a farmer in another area is *parked* far off the map, so proximity and tile checks ignore them automatically. `_save()` unparks before collecting; never write your own save path around it. |
+| Warps | `self.warp(target, spawn)` moves only the farmers in the current area (online) or both (local). `self.warp_player(i, target, spawn)` moves one farmer. |
+| Screens | In the partner's area the host swaps particles / popups / sounds / shake / area card for sinks, and `ui.log` / `toast` lines are relayed to the partner's screen. |
+| Sleep | `request_sleep(idx)`: online, the day ends only once both farmers are home (the waiting one is told). |
+| Mist City | The gate needs both farmers in the forest online. |
+
+Test: `py tools/duo_online_test.py` runs a real host and client over TCP on localhost (16 checks).

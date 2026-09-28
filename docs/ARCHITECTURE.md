@@ -46,6 +46,7 @@ src/
     coop_system.py         CoopMixin    — อีโมท, Love boost, ให้ของ P1↔P2, day report, สถิติ (แท็บ Stats)   (ใหม่ 09-26)
     weather_system.py      WeatherMixin — storm/fog/windy, พยากรณ์, รุ้ง, ambience                        (ใหม่ 09-26)
     net_system.py          NetMixin     — LAN host/client glue (ใช้ package src/net/)
+    areactx_system.py      AreaCtxMixin — ออนไลน์: ผู้เล่นแต่ละคนอยู่คนละแมพได้ (p_area, area_ctx, warp_player)   (ใหม่ 09-28)
     combat_system.py       CombatMixin  — _reward_kill, sword_attack, คริ/knockback, ระเบิด, อัญมณี, บอส
     progress_system.py     ProgressMixin — achievements + แท็บ Journal                                 (ใหม่ 09-26)
     farm_system.py         FarmMixin    — สัตว์/collector/forest regrow + affection สัตว์
@@ -65,6 +66,7 @@ src/
     chars.py               สไปรต์ผู้เล่น/NPC
     terrain.py             น้ำ/ต้นไม้/หิน/slime/อาคาร/ป้ายบอส (+ ต้นไม้/หญ้าตามฤดู)
     items.py               ไอคอนไอเทม+เครื่องมือ + วาดของที่ถืออยู่ (+ register_item_icon)
+    icon_art.py            ไอคอนชุดวาดใหม่ (เครื่องมือ/ปลา/พืช/วัตถุดิบ/อาหาร) + finish() ขอบ 1px — item_icon ดูที่นี่ก่อน
     props.py               props โต้ตอบ/ตกแต่ง + prop_sprite (+ register_prop)  [SEAM]
     hud.py                 ชิ้นส่วน HUD ใหม่ (การ์ดนาฬิกา, แผงผู้เล่น, ไอคอน)                          (ใหม่ 09-26)
   mistcity/              ← โหมด Mist City (side-scroller) — Chat 7

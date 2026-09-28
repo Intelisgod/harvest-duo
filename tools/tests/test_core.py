@@ -780,10 +780,16 @@ def run(g, check, H):
             assert "disconnected" in logs(), logs()
             # P2's bed press while P1 is busy gets an honest answer
             g.net.connected = True
+            g.net, g.net_mode = None, None
+            g.warp(AREA_HOME, sp[AREA_HOME])            # both farmers home
+            g.net, g.net_mode = FakeNet(True), "host"
             g.state = "journal"
             g.net.sent.clear()
             g._net_sleep_op()
             assert any("busy" in m.get("text", "") for m in g.net.sent), g.net.sent
+            g._ctx_rest_tasks()
+            assert g.state == "journal", "P1's screen was yanked shut by P2's bed"
+            g._sleep_pending = False
         finally:
             g.net, g.net_mode = None, None
             g._cb_bombs = []

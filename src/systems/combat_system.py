@@ -431,10 +431,10 @@ class CombatMixin:
         self.ui.log("Swing!" if not landed else "Hit!")
 
     # ------------------------------------------------------------ per frame
-    def _on_update_combat(self, dt):
+    def _on_area_update_combat(self, dt):
         area = self.world.area
         self._cb_area_t += dt
-        for p in self.players:
+        for p in self.players_here():
             if p.__dict__.get("cb_slash", 0.0) > 0:
                 p.cb_slash -= dt
         # monster AI side effects + knockback slides

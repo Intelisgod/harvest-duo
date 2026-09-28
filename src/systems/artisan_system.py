@@ -561,9 +561,11 @@ def _register_icons():
         reg(gid, _paint_good(gid))
     reg("fertilizer", _paint_fertilizer(False))
     reg("quality_fertilizer", _paint_fertilizer(True))
+    core = getattr(getattr(assets, "icon_art", None), "ITEM_ART", {})
     for fid in dict.fromkeys(list(getattr(cooking, "BUFFS", {}))
                              + list(getattr(cooking, "FORAGE_DISHES", ()))):
-        reg(fid, _paint_food(fid))
+        if fid not in core:            # the redrawn core art (assets/icon_art) wins
+            reg(fid, _paint_food(fid))
 
 
 _register_all()

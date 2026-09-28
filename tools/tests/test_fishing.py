@@ -320,7 +320,7 @@ def run(g, check, H):
         H.frames(g, 60)
         t = _t.perf_counter()
         for _ in range(60):
-            g._on_update_forage(H.DT)
+            g._on_area_update_forage(H.DT)
             g._world_sprites_forage_wildlife()
             g._world_sprites_forage_items()
             g._lights_forage_fireflies()

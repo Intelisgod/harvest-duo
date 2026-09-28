@@ -868,6 +868,9 @@ class FestivalGamesMixin:
             fb = self._story_stall()
             if abs(pgx - fb[0]) <= 1 and abs(pgy - fb[1]) <= 1:
                 if str(self.time.year) not in self.story_egg_hunts:
+                    f = getattr(self, "together_needed", None)
+                    if f and f("The Egg Hunt"):
+                        return True
                     self._story_egg_start()
                     return True
             return False
@@ -1093,12 +1096,19 @@ class FestivalGamesMixin:
                 return True
         return False
 
-    def _on_update_story_fest(self, dt):
+    def _on_area_update_story_fest(self, dt):
         hunt = self._egg
-        if hunt is not None:
-            if self.world.current != AREA_TOWN:
+        if hunt is not None and self.world.current != AREA_TOWN:
+            # (online, each occupied area runs this: the hunt only ends once
+            # nobody is left in town, and only ticks in the town's own pass)
+            if AREA_TOWN not in getattr(self, "p_area", ()):
                 self._story_egg_end(abandoned=True)
                 return
+            hunt = None
+        if hunt is not None and getattr(self, "independent", lambda: False)() and self.apart():
+            self._story_egg_end(abandoned=True)   # online: someone left town mid-hunt
+            return
+        if hunt is not None:
             hunt["t"] -= dt
             sec = int(math.ceil(hunt["t"]))
             if sec != hunt.get("last") and 0 < sec <= 5:
@@ -1112,7 +1122,7 @@ class FestivalGamesMixin:
             if hunt["t"] <= 0 or not hunt["eggs"]:
                 self._story_egg_end()
                 return
-        if self._lanterns:
+        if self._lanterns and self.world.current == self.view_area():
             for ln in self._lanterns:
                 ln[1] -= dt * (26 + (ln[3] % 1.0) * 14)
                 ln[0] += math.sin(ln[3] + ln[4] * 0.8) * dt * 8 + ln[2] * dt

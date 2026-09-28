@@ -314,7 +314,7 @@ class StoryMixin(RestorationMixin, FestivalGamesMixin):
         wy = min(max(wy, 1), area.h - 2)
         return wx * TILE + TILE / 2, wy * TILE + TILE / 2
 
-    def _on_update_story_villagers(self, dt):
+    def _on_area_update_story_villagers(self, dt):
         hour = int(self.time.minutes) // 60
         if hour != self._story_hour:
             self._story_hour = hour

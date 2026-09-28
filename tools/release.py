@@ -48,8 +48,10 @@ def have(tool):
 
 
 def smoke_test():
-    print("\n== ทดสอบเกมก่อนส่ง (smoke test ~15 วิ) ==")
-    if run(sys.executable, os.path.join("tools", "smoke_test.py"), check=False) != 0:
+    print("\n== ทดสอบเกมก่อนส่ง (smoke test + ออนไลน์ ~30 วิ) ==")
+    bad = run(sys.executable, os.path.join("tools", "smoke_test.py"), check=False) != 0
+    bad |= run(sys.executable, os.path.join("tools", "duo_online_test.py"), check=False) != 0
+    if bad:
         ans = input("\n[!] เทสไม่ผ่าน — ถ้าส่งไป แฟนจะได้เวอร์ชันที่อาจพัง. ส่งต่อไหม? (y/N): ")
         if ans.strip().lower() != "y":
             raise SystemExit("ยกเลิก — ยังไม่ได้ส่งอะไรขึ้นไป")

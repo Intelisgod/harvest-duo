@@ -316,13 +316,14 @@ class WorldMixin:
                 farm.solid_extra.discard((gx, gy))
 
     # ------------------------------------------------------------------ per frame
-    def _on_update_world(self, dt):
+    def _on_area_update_world(self, dt):
         self._wh_quiet = False            # a load without an area re-entry (respawn=False)
         self._world_apply_season()
         self._world_sync_decor()
-        if self._wp_glow > 0:
+        view = self.world.current == self.view_area()      # (online: once per frame)
+        if view and self._wp_glow > 0:
             self._wp_glow = max(0.0, self._wp_glow - dt)
-        if self._w_swing_amp > 1.0:                        # swing settles back
+        if view and self._w_swing_amp > 1.0:               # swing settles back
             self._w_swing_amp = max(1.0, self._w_swing_amp - dt * 2.2)
         area = self.world.area
         self._w_fx_t += dt
@@ -340,7 +341,7 @@ class WorldMixin:
                         self.world.tilled.discard(k)
                         self.world.watered.discard(k)
 
-    def _on_update_world_hazards(self, dt):
+    def _on_area_update_world_hazards(self, dt):
         area = self.world.area
         hz = getattr(area, "hazards", None)
         if not hz:

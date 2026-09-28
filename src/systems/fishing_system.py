@@ -5,7 +5,7 @@ Related modules: fishing.py (FISH_DATA, tiers, sizes, reel mechanic), critters.p
 (The cast/hook/reel state machine lives in fishing.py; this mixin handles what
 happens when a fish is successfully landed, plus a few hooks:)
 
-  * ``_on_update_fishing_buff`` -- feeds each angler's ``p.buff("fishing")`` into
+  * ``_on_area_update_fishing_buff`` -- feeds each angler's ``p.buff("fishing")`` into
     their FishingState (faster bites, wider bite/reel windows) and animates the
     treasure chests.
   * ``fish_records`` -- {fish_id: {"n": count, "big": cm, "by": name}} (saved) --
@@ -142,12 +142,12 @@ class FishingMixin:
         self.fish_chests = []        # loot was already granted; just drop the show
 
     # ------------------------------------------------------------ per frame
-    def _on_update_fishing_buff(self, dt):
+    def _on_area_update_fishing_buff(self, dt):
         rain = 0.15 if getattr(self, "weather", "") in ("rain", "storm") else 0.0   # fish bite in the rain
         for i, p in enumerate(self.players):
             st = self.fishing.get(i)
-            if st is None:
-                continue
+            if st is None or not self.player_here(i):
+                continue                                 # (online: an angler in another area)
             st.bonus = (p.buff("fishing") if hasattr(p, "buff") else 0.0) + rain
             st.hotspot = self._fish_in_spot(p)
             if st.state == "casting" and self._cast_prev.get(i) == "idle" and st.hotspot:

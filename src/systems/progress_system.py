@@ -339,6 +339,13 @@ class ProgressMixin:
         a = PR.ACH.get(key)
         if not a:
             return
+        if getattr(self, "_ctx_view_saved", None) is not None:
+            # inside the online partner's area: queue it for the host screen
+            self.__dict__.setdefault("_ach_toast_q", []).append([key, 0.0])
+            return
+        f = getattr(self, "_net_toast", None)
+        if f and getattr(self, "net_mode", None) == "host":
+            f(f"Achievement unlocked! {a['title']} (+{a['gold']}g)")
         icon = a["icon"]
         self.toast("Achievement unlocked!", f"{a['title']}  (+{a['gold']}g)",
                    ach_icon(icon) if icon.startswith("@") else icon, _ACH_GOLD, 4.0)

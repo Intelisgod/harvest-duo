@@ -97,7 +97,7 @@ class FarmMixin:
     def _on_reset_farm_animals(self):
         self._farm_heart_t = 0.0      # throttles the happy-animal floating hearts
 
-    def _on_update_farm_animals(self, dt):
+    def _on_area_update_farm_animals(self, dt):
         """Very happy animals (4+ hearts) now and then float a little heart."""
         if self.world.current != AREA_COOP or not self.animals:
             return

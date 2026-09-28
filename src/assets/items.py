@@ -11,6 +11,7 @@ from ..fishing import FISH
 from .. import loot, cooking
 from ._base import (_cache, _surf, _ic, _lt, _dk, _I, IC, WOOD, STEEL,
                     CAN_BLUE, GOLD_HILT, CROP_FORM, FISH_LOOK)
+from . import icon_art
 
 
 def fish_icon(color=(120, 170, 210)):
@@ -44,7 +45,9 @@ def tool_icon(name):
     if key in _cache:
         return _cache[key]
     s = _ic()
-    if name == "hoe":
+    if name in icon_art.TOOL_ART:                   # redrawn set (outlined + shaded)
+        icon_art.TOOL_ART[name](s)
+    elif name == "hoe":
         pygame.draw.line(s, WOOD, (6, 23), (20, 7), 3)
         pygame.draw.line(s, STEEL, (19, 5), (25, 9), 4)
     elif name == "watering_can":
@@ -390,6 +393,10 @@ def item_icon(item_id):
     s = _ic()
     if item_id in ITEM_PAINTERS:
         ITEM_PAINTERS[item_id](s)
+    elif item_id in icon_art.ITEM_ART:              # redrawn core items (see icon_art)
+        icon_art.ITEM_ART[item_id](s)
+    elif item_id.startswith("seed:") and item_id.split(":", 1)[1] in CROPS:
+        icon_art.seed_packet(s, item_icon(item_id.split(":", 1)[1]))
     elif item_id.startswith("seed:"):
         crop = item_id.split(":", 1)[1]
         ccol = CROPS.get(crop, {}).get("color", (150, 180, 90))
@@ -518,6 +525,8 @@ def item_icon(item_id):
         _draw_mist_mat(s, item_id)                                               # Mist City salvage
     else:
         pygame.draw.rect(s, (170, 170, 170), (7, 7, 14, 14), border_radius=3)
+    if item_id in icon_art.OUTLINE_ONLY and item_id not in ITEM_PAINTERS:
+        icon_art.finish(s)
     _cache[key] = s
     return s
 

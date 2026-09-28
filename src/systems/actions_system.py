@@ -504,7 +504,7 @@ class ActionsMixin:
             if fr:
                 if fr.kind == "bed":             # facing any bed cell (any rotation)
                     if self._bed_confirmed(idx, p, facing=facing is fr):
-                        self.do_sleep()
+                        self.request_sleep(idx)
                 else:
                     self.interact_furniture(p, fr)
                 return
@@ -515,7 +515,7 @@ class ActionsMixin:
         if area.bed and abs(pgx - area.bed[0]) <= 1 and abs(pgy - area.bed[1]) <= 1:
             if not (entry and entry[0] == "tool"):
                 if self._bed_confirmed(idx, p, facing=False):
-                    self.do_sleep()
+                    self.request_sleep(idx)
                 return
 
         # 4) mine ladder -> go deeper

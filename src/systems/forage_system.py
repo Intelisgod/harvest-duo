@@ -301,7 +301,7 @@ class ForageMixin:
         return True
 
     # ------------------------------------------------------------ update
-    def _on_update_forage(self, dt):
+    def _on_area_update_forage(self, dt):
         if self.forage_pops:
             for pop in self.forage_pops:
                 pop[3] += dt

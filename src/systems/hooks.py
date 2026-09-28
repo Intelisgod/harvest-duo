@@ -17,7 +17,14 @@ Name your hooks ``<prefix><domain>_<what>`` so they never collide.
   _on_reset_                 ()                         end of Game.reset() (init YOUR state)
   _on_area_enter_            ()                         end of _spawn_area_entities (every warp)
   _on_new_day_               ()                         end of on_new_day (after crops/weather)
-  _on_update_                (dt)                       Game.update, state "play", after mobs
+  _on_update_                (dt)                       Game.update, state "play", after mobs --
+                                                        ONCE per frame, in the view area (global
+                                                        timers, HUD, weather, achievements)
+  _on_area_update_           (dt)                       once per OCCUPIED area per frame (online
+                                                        each farmer can stand in a different area;
+                                                        see systems/areactx_system.py): monsters,
+                                                        critters, hazards, per-area fx. Loop over
+                                                        self.players_here() for per-player work.
   _on_client_update_         (dt)                       LAN CLIENT only, every frame (the client
                                                         never runs update): cosmetic ticks such
                                                         as critter animation. Never mutate saved

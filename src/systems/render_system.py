@@ -74,6 +74,14 @@ class RenderMixin:
 
     # ---------- draw ----------
     def draw(self):
+        # online: a farmer in another area is hidden from this screen
+        parked = getattr(self, "_draw_parked", None)
+        if parked is None:
+            return self._draw_frame()
+        with parked():
+            return self._draw_frame()
+
+    def _draw_frame(self):
         # HUD reservations (ui_system.hud_reserve): last frame's become current
         self._hud_res = self.__dict__.get("_hud_res_cur", [])
         self._hud_res_cur = []

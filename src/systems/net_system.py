@@ -28,7 +28,7 @@ except for a few guarded hooks in game.py (run / update / _update_camera).
 import pygame
 
 from ..settings import (P1_KEYS, P2_KEYS, BUILD_KEY, TILE, JOURNAL_KEY,
-                        AREA_HOME, AREA_COOP, AREA_TOWN)
+                        AREA_HOME, AREA_COOP, AREA_TOWN, AREA_MINE)
 from ..net import Host, Client, PORT
 from ..net.transport import local_ip
 
@@ -41,9 +41,10 @@ CLIENT_KEYS = {
 
 _SNAP_HZ = 30.0           # entity snapshots per second (host -> client)
 _WORLD_EVERY = 1.0        # full world resync interval (seconds)
-# host screens during which the online Player 2 is frozen; on every other
-# overlay (journal, shop, decor...) P2 keeps walking / fishing.
-_HOST_FROZEN_STATES = ("play", "menu", "sleep", "create", "mistcity", "day_report")
+# host screens during which the online Player 2 is frozen (the whole farm
+# stops: a new day, dressing up, a Mist City run). On every other screen --
+# journal, shop, decor, even the pause menu -- P2's world keeps running.
+_HOST_FROZEN_STATES = ("play", "sleep", "create", "mistcity", "day_report")
 # FishingState fields mirrored to the client (bobber, bite, reel pips)
 _FISH_FIELDS = ("state", "timer", "fish", "water", "reel_done", "reel_needed", "hotspot")
 
@@ -132,10 +133,14 @@ class NetMixin:
                 self.net.close()
             except Exception:
                 pass
+        was_host = self.net_mode == "host"
         self.net = None
         self.net_mode = None
         self.cam_focus = None
         self._remote_dirs = [False, False, False, False]
+        if was_host and getattr(self, "p_area", None) and self.p_area[1] != self.world.current:
+            self._regroup_p2()           # local co-op again: Player 2 rejoins Player 1
+        self._sleep_pending, self._sleep_ready = False, None
         if getattr(self, "_net_client_session", False):
             self._net_restore_local()
 
@@ -220,20 +225,30 @@ class NetMixin:
                 r["t"] = max(r.get("t", 0), 2.4)
                 r["star_shown"] = r.get("stars", 0)
             return
+        apart = self.apart()
         if self.state != "play":
-            if self.state not in _HOST_FROZEN_STATES:
-                self._net_overlay_event(ev)
-            return
+            if self.state in _HOST_FROZEN_STATES:
+                return
+            if not apart:
+                self._net_overlay_event(ev)      # beside P1's open screen: tools only
+                return
+            # in another area P2 plays on normally while P1 reads a menu
         if ev == "action":
-            txt = self.dialogue_text
+            st, txt = self.state, self.dialogue_text
             self.player_action(1)
-            if self.state == "dialogue":
+            if self.state == "dialogue" and st != "dialogue":
                 # a line meant for Player 2: show it on THEIR screen, and don't
                 # freeze the host behind a dialogue box P1 never asked for
                 self._net_toast(self.dialogue_text.strip())
-                self.state, self.dialogue_text = "play", txt
-            elif self.state not in ("play", "sleep"):
-                self._net_toast("Opened on the host's screen.")
+                self.state, self.dialogue_text = st, txt
+            elif self.state != st and self.state != "sleep":
+                if apart or st != "play":
+                    # never pop a screen up in front of Player 1 from another area
+                    self.state, self.dialogue_text = st, txt
+                    self._net_toast("That one opens on the host's screen - "
+                                    "try it together with Player 1.")
+                else:
+                    self._net_toast("Opened on the host's screen.")
         elif ev == "prev":
             self.players[1].inv.cycle(-1)
         elif ev == "next":
@@ -242,7 +257,8 @@ class NetMixin:
             f = getattr(self, "_emote_press", None)     # CoopMixin
             if f:
                 f(1)
-        elif ev == "build" and self.world.current == AREA_HOME:
+        elif (ev == "build" and self.world.current == AREA_HOME and not apart
+              and self.state == "play"):
             self.state = "build"
             self.audio.play("ui_select")
 
@@ -270,19 +286,18 @@ class NetMixin:
                     self.state = st
 
     def _net_host_overlay_step(self, dt):
-        """Host-side: keep the online Player 2 walking/fishing while P1 has a
-        non-blocking screen open (Game.run only calls update() in "play")."""
+        """Host-side: Player 2's area keeps running while P1 has a non-blocking
+        screen open (Game.run only calls update() in "play") -- P2 walks, fishes,
+        fights, and the monsters / villagers around them carry on."""
         if (self.net_mode != "host" or not self.net or not self.net.connected
                 or self.state in _HOST_FROZEN_STATES):
             return
-        p = self.players[1]
-        if getattr(p, "sitting", None):
-            return
         try:
-            p.update(dt, self._remote_keystate(), self.world.area)
-            self.fishing[1].update(dt)
+            self.partner_update(dt)
         except Exception:
-            pass
+            import os
+            if os.environ.get("HD_STRICT_HOOKS") == "1":
+                raise
 
     # ---------------- host: receive input + broadcast ----------------
     def _net_host_ingest(self):
@@ -295,9 +310,11 @@ class NetMixin:
                 if isinstance(d, list) and len(d) == 4:
                     self._remote_dirs = [bool(x) for x in d]
                 for ev in m.get("ev", []):
-                    self._apply_remote_event(ev)
+                    with self.area_ctx(self.p_area[1]):
+                        self._apply_remote_event(ev)
             elif t == "menu":
-                self._net_apply_menu(m)
+                with self.area_ctx(self.p_area[1]):
+                    self._net_apply_menu(m)
 
     # ---------------- host: apply a client menu action for Player 2 ----------
     def _net_toast(self, text):
@@ -384,6 +401,12 @@ class NetMixin:
                 if self.state == "dialogue":         # a line meant for P2 only
                     self._net_toast(self.dialogue_text.strip())
                     self.state, self.dialogue_text = st, txt
+                elif self.state != st and (self.apart() or st != "play"):
+                    # a heart event plays on the host's screen: only when P1 is
+                    # right there (it stays ready for later, nothing is used up)
+                    self.state, self.dialogue_text = st, txt
+                    self._net_toast(f"{npc.name} has something special to share with you "
+                                    "both - come back together with Player 1!")
                 elif self.state != st:
                     self._net_toast(f"{npc.name} has something to share - look at the host's screen!")
                 return
@@ -423,13 +446,9 @@ class NetMixin:
         self._net_toast(self._donate(buyer, self.players[buyer]))
 
     def _net_sleep_op(self):
-        if self.state == "play":
-            self.do_sleep()
-            self._net_toast("Sleeping... a new day begins.")
-        elif self.state in ("sleep", "day_report"):
-            pass                                  # already asleep / on the report
-        else:
-            self._net_toast("Player 1 is busy - try the bed again in a moment.")
+        if self.state in ("sleep", "day_report"):
+            return                                # already asleep / on the report
+        self.request_sleep(1)                     # both at home -> the day ends
 
     def _net_furn_op(self, kind, gx=None, gy=None, buyer=1):
         from ..settings import MAX_ENERGY
@@ -586,25 +605,30 @@ class NetMixin:
             self._net_synced = False
             self._remote_dirs = [False, False, False, False]
             return
-        # (re)send the heavy world state on connect, on area change, or on a timer
-        self._net_world_t += dt
-        area_changed = (self.world.current != self._net_last_area)
-        sent_world = False
-        if (not self._net_synced) or area_changed or self._net_world_t >= _WORLD_EVERY:
-            self.net.send(self._collect_world())
-            self._net_world_t = 0.0
-            self._net_synced = True
-            self._net_last_area = self.world.current
-            self.net_status = f"P2 connected — {self.world.current.upper()}"
-            sent_world = True
-        self._net_host_state_notice()
-        self._net_host_bomb_fx()
-        # high-rate entity snapshot (always right after a world message, so the
-        # client never draws a world message's fresh spawns without positions)
-        self._net_snap_t += dt
-        if sent_world or self._net_snap_t >= 1.0 / _SNAP_HZ:
-            self._net_snap_t = 0.0
-            self.net.send(self._collect_snapshot())
+        # everything the client sees is Player 2's OWN area (which may not be
+        # the one on the host's screen)
+        with self.area_ctx(self.p_area[1]):
+            # (re)send the heavy world state on connect, on area change (a new
+            # mine floor counts), or on a timer
+            self._net_world_t += dt
+            key = (self.world.current, id(self.world.area))
+            area_changed = (key != self._net_last_area)
+            sent_world = False
+            if (not self._net_synced) or area_changed or self._net_world_t >= _WORLD_EVERY:
+                self.net.send(self._collect_world())
+                self._net_world_t = 0.0
+                self._net_synced = True
+                self._net_last_area = key
+                self.net_status = f"P2 connected — {self.world.current.upper()}"
+                sent_world = True
+            self._net_host_state_notice()
+            self._net_host_bomb_fx()
+            # high-rate entity snapshot (always right after a world message, so the
+            # client never draws a world message's fresh spawns without positions)
+            self._net_snap_t += dt
+            if sent_world or self._net_snap_t >= 1.0 / _SNAP_HZ:
+                self._net_snap_t = 0.0
+                self.net.send(self._collect_snapshot())
 
     def _net_host_state_notice(self):
         """One line to P2 when P1's screen freezes the farm (Mist City, pause
@@ -617,7 +641,7 @@ class NetMixin:
                 self._net_send_report()
         else:
             self._net_dr_sent = False
-        key = st if st in ("mistcity", "menu", "create") else "play"
+        key = st if st in ("mistcity", "create") else "play"
         prev = getattr(self, "_net_host_notified_state", None)
         if prev is None:                         # first frame of a link: no notice
             self._net_host_notified_state = key
@@ -626,7 +650,6 @@ class NetMixin:
             return
         self._net_host_notified_state = key
         msg = {"mistcity": "Player 1 is exploring Mist City - the farm is paused.",
-               "menu": "Player 1 opened the menu - the farm is paused.",
                "create": "Player 1 is dressing up - the farm is paused."}.get(key)
         self._net_toast(msg or "Player 1 is back - the farm is running again!")
 
@@ -947,12 +970,23 @@ class NetMixin:
             # re-rolls, monsters flashing back): only rebuild area entities when
             # the area / mine floor really changed or on the first sync.
             respawn = (save.get("current") != self.world.current
-                       or save.get("mine_level", 1) != self.world.mine_level
+                       or (save.get("current") == AREA_MINE
+                           and save.get("mine_level", 1) != self.world.mine_level)
                        or not getattr(self, "_net_world_seen", False))
             self._net_applying_world = True
             try:
                 self._apply_save(save, respawn=respawn)   # world/players/crops/etc.
                 self._net_world_seen = True
+                if respawn and getattr(self, "_net_world_seen_area", None) != self.world.current:
+                    self._net_world_seen_area = self.world.current
+                    self.fade = 1.0                          # the warp iris, on OUR screen
+                    self.parts.items.clear()
+                    self.popups.clear()
+                    try:
+                        self.audio.play("warp")
+                        self.audio.play_area(self.world.current)
+                    except Exception:
+                        pass
                 if respawn and getattr(self, "_on_event_ui_card", None):
                     # UI-only: the client's own title card for the host's area
                     # (never self.emit('warp') -- stats/achievements would count it)
@@ -1026,7 +1060,7 @@ class NetMixin:
                 "gold": self.gold, "min": round(self.time.minutes, 1),
                 "day": self.time.day, "season": self.time.season_idx,
                 "night": round(self.night, 3), "W": getattr(self, "weather", "sunny"),
-                "hs": self.state}
+                "hs": self.state, "PA": list(getattr(self, "p_area", ()))}
         bm = self._net_pack_bombs()
         if bm is not None:
             snap["BM"] = bm
@@ -1062,6 +1096,10 @@ class NetMixin:
                 from ..ui import key_label
                 self.ui.log("The End-of-Day report is on Player 1's screen - press "
                             f"{key_label(CLIENT_KEYS['action'])} to continue.")
+        pa = d.get("PA")
+        if (isinstance(pa, list) and len(pa) == 2
+                and all(isinstance(a, str) and a in self.world.areas for a in pa)):
+            self.p_area = list(pa)          # who stands where (hides P1 when apart)
         if d.get("area") != self.world.current:
             return            # geometry not in sync yet; wait for the next world msg
         if "BM" in d:

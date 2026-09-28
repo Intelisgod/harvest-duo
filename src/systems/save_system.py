@@ -282,7 +282,15 @@ class SaveMixin:
             return
         if self.started and not self.load_failed:
             try:
-                savegame.save_game(self._collect_save())
+                unparked = getattr(self, "_unparked", None)
+                if unparked:
+                    with unparked():                 # never save a parked (off-map) farmer
+                        data = self._collect_save()
+                    if self.independent():           # the host's own area is "current"
+                        data["current"] = self.view_area()
+                else:
+                    data = self._collect_save()
+                savegame.save_game(data)
             except Exception:
                 # a save error must never crash the game on exit -- but leave a
                 # trace next to the save so a broken hook/state can be found

@@ -26,6 +26,7 @@ from .forage_system import ForageMixin
 from .story_system import StoryMixin
 from .world_system import WorldMixin
 from .ui_system import UIMixin
+from .areactx_system import AreaCtxMixin
 
 __all__ = [
     "SaveMixin", "ActionsMixin", "CombatMixin", "FarmMixin", "FishingMixin",

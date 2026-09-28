@@ -614,7 +614,7 @@ def run(g, check, H):
 
         def tick(n=3):
             for _ in range(n):
-                g._on_update_story_villagers(H.DT)
+                g._on_area_update_story_villagers(H.DT)
 
         try:
             set_time(0, 1, 10)

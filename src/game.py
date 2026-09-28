@@ -51,7 +51,7 @@ from .systems import (HooksMixin, SaveMixin, ActionsMixin, CombatMixin, FarmMixi
                       FishingMixin, TempleMixin, SocialMixin, ShopMixin,
                       ShopMenu, NetMixin, RenderMixin,
                       CoopMixin, WeatherMixin, ProgressMixin, ArtisanMixin,
-                      ForageMixin, StoryMixin, WorldMixin, UIMixin)
+                      ForageMixin, StoryMixin, WorldMixin, UIMixin, AreaCtxMixin)
 try:
     # Mist City side-scroller mode (Chat 7 owns src/mistcity/). Optional: the
     # game must boot and run fine before that folder lands.
@@ -73,7 +73,7 @@ DEFAULT_LOOK = [
 class Game(HooksMixin, SaveMixin, ActionsMixin, CombatMixin, FarmMixin, FishingMixin,
            TempleMixin, SocialMixin, ShopMixin, NetMixin, MistMixin,
            CoopMixin, WeatherMixin, ProgressMixin, ArtisanMixin, ForageMixin,
-           StoryMixin, WorldMixin, UIMixin, RenderMixin):
+           StoryMixin, WorldMixin, UIMixin, AreaCtxMixin, RenderMixin):
     """The game controller. Behaviour is supplied by the system mixins above;
     only lifecycle/loop/glue lives directly on this class."""
 
@@ -323,8 +323,9 @@ class Game(HooksMixin, SaveMixin, ActionsMixin, CombatMixin, FarmMixin, FishingM
 
     HOME_CAM_Y = -148              # vertical offset that drops the room below the HUD
 
-    def _update_camera(self, area):
-        """Home is fixed & centred in the clear zone; other areas follow the players."""
+    def _update_camera(self, area, focus=None):
+        """Home is fixed & centred in the clear zone; other areas follow the players.
+        ``focus`` pins the camera to one player (a partner's own area)."""
         if area.name == AREA_HOME:
             self.cam.x = -((SCREEN_W - area.w * TILE) // 2)
             self.cam.y = self.HOME_CAM_Y
@@ -335,11 +336,25 @@ class Game(HooksMixin, SaveMixin, ActionsMixin, CombatMixin, FarmMixin, FishingM
         else:
             # online: each machine's camera follows its own player; local co-op
             # keeps both on screen by following their midpoint.
-            foc = getattr(self, "cam_focus", None)
+            foc = focus if focus is not None else getattr(self, "cam_focus", None)
             who = [self.players[foc]] if foc is not None else self.players
             self.cam.update(who, area)
 
     def warp(self, target, spawn):
+        if self.independent():
+            # online: only the farmers standing in THIS area travel (a door,
+            # the mine ladder); the partner elsewhere is untouched
+            cur = self.world.current
+            here = [i for i in range(len(self.players))
+                    if self.p_area[i] == cur and self.player_here(i)] or [0]
+            for k, i in enumerate(here):
+                self.warp_player(i, target, spawn, beside=k > 0)
+            if target == cur and self.world.current == target:
+                self._spawn_area_entities()        # same area rebuilt (next mine floor)
+                if 0 in here and self._ctx_depth > 0:
+                    self._view_arrived()           # (at rest warp_player already did)
+            return
+        self.p_area = [target, target]
         if getattr(self, "audio", None):
             self.audio.stop_song()                  # end the anniversary song on leaving
         self.world.current = target
@@ -371,37 +386,44 @@ class Game(HooksMixin, SaveMixin, ActionsMixin, CombatMixin, FarmMixin, FishingM
             dt = self.clock.tick(FPS) / 1000.0
             dt = min(dt, 0.05)
             self.handle_events()
-            if self.net_mode == "host" and self.net:
-                self._net_host_ingest()          # apply P2's input before simulating
-            self._iris_tick(dt)
-            if self.net_mode == "client":
-                self._net_client_step(dt)        # render-only: send input, apply state
-            elif self.state == "play":
-                self.update(dt)
-            elif self.state == "menu":
-                self.menu.update(dt)
-                amb = getattr(self.audio, "set_ambience", None)
-                if amb:
-                    amb(None)                    # no rain bed over the title menu
-            elif self.state == "inventory" and self.inv_screen:
-                self.inv_screen.update(dt)
-            elif self.state == "mistcity":
-                f = getattr(self, "_mist_update", None)         # MistMixin (guarded)
-                if f:
-                    f(dt)
-                amb = getattr(self.audio, "set_ambience", None)
-                if amb:
-                    amb(None)
-            else:
-                self._run_state("update", dt)                   # domain custom states
-            if self.net_mode == "host" and self.net:
-                if self.state != "play":
-                    self._net_host_overlay_step(dt)   # P2 keeps moving under P1's overlay
-                self._net_host_broadcast(dt)     # ship snapshot to the client
+            self.step(dt)
             self.draw()
         self.net_stop()
         self._save()
         pygame.quit()
+
+    def step(self, dt):
+        """One frame of simulation (everything but input events and drawing)."""
+        st_start = self.state
+        if self.net_mode == "host" and self.net:
+            self._net_host_ingest()          # apply P2's input before simulating
+        self._iris_tick(dt)
+        if self.net_mode == "client":
+            self._net_client_step(dt)        # render-only: send input, apply state
+        elif self.state == "play":
+            self.update(dt)
+        elif self.state == "menu":
+            self.menu.update(dt)
+            amb = getattr(self.audio, "set_ambience", None)
+            if amb:
+                amb(None)                    # no rain bed over the title menu
+        elif self.state == "inventory" and self.inv_screen:
+            self.inv_screen.update(dt)
+        elif self.state == "mistcity":
+            f = getattr(self, "_mist_update", None)         # MistMixin (guarded)
+            if f:
+                f(dt)
+            amb = getattr(self.audio, "set_ambience", None)
+            if amb:
+                amb(None)
+        else:
+            self._run_state("update", dt)                   # domain custom states
+        if self.net_mode == "host" and self.net:
+            if self.state != "play" and st_start != "play":
+                self._net_host_overlay_step(dt)   # P2's area keeps running under P1's screen
+            self._net_host_broadcast(dt)     # ship snapshot to the client
+        if self.independent():
+            self._ctx_rest_tasks()           # sleep etc. (nobody parked here)
 
     # ---------- events ----------
     def handle_events(self):
@@ -480,8 +502,9 @@ class Game(HooksMixin, SaveMixin, ActionsMixin, CombatMixin, FarmMixin, FishingM
             self.shop_input(key)
             return
         if self.state == "play":
-            if self._first_hook("_on_keydown_", key):        # domain hotkeys
-                return
+            with self.area_ctx(self.p_area[0]):                # online: P2 elsewhere is parked
+                if self._first_hook("_on_keydown_", key):    # domain hotkeys
+                    return
             # a player action bound to B / I (old settings) wins over the hotkey
             bound = any(key == c for K in (P1_KEYS, P2_KEYS) for c in K.values())
             if key == BUILD_KEY and self.world.current == AREA_HOME and not bound:
@@ -491,14 +514,17 @@ class Game(HooksMixin, SaveMixin, ActionsMixin, CombatMixin, FarmMixin, FishingM
             if key == pygame.K_i and not bound:
                 self._open_inventory()
                 return
-            # tool cycling
+            # tool cycling (online, Player 2 is driven by the client, not this keyboard)
             for idx, K in ((0, P1_KEYS), (1, P2_KEYS)):
+                if idx == 1 and self.independent():
+                    continue
                 if key == K["prev"]:
                     self.players[idx].inv.cycle(-1)
                 elif key == K["next"]:
                     self.players[idx].inv.cycle(1)
                 elif key == K["action"]:
-                    self.player_action(idx)
+                    with self.area_ctx(self.p_area[idx]):
+                        self.player_action(idx)
 
     def _open_inventory(self, pi=0):
         """Open the hotbar-arrange screen (press I; I/ESC inside it closes back
@@ -578,6 +604,7 @@ class Game(HooksMixin, SaveMixin, ActionsMixin, CombatMixin, FarmMixin, FishingM
             if self.slept_in_bed:
                 p.health = min(self._max_hp(p), p.health + 40)
         self._run_hooks("_on_new_day_")   # domain morning work (may read slept_in_bed)
+        self._ctx_drop_others()           # online: the partner's area wakes up fresh too
         self.slept_in_bed = False
         self.emit("day_started", day=self.time.day, season=self.time.season_idx,
                   year=self.time.year)
@@ -595,37 +622,71 @@ class Game(HooksMixin, SaveMixin, ActionsMixin, CombatMixin, FarmMixin, FishingM
             self.state = "sleep"
             self.sleep_timer = 1.4
             return
+        if not self.independent():
+            self.p_area = [self.world.current, self.world.current]   # local: always together
+            self._update_area(dt, (0, 1), globals_=True)
+            return
+        # online: every area a farmer stands in runs, the host's view first
+        order = [self.p_area[0]]
+        if self.p_area[1] != self.p_area[0] and self.partner_online():
+            order.append(self.p_area[1])          # (an offline partner waits, frozen)
+        done, st0 = set(), self.state
+        for k, name in enumerate(order):
+            idxs = [i for i in range(len(self.players))
+                    if self.p_area[i] == name and i not in done
+                    and (i == 0 or self.partner_online() or not self.apart())]
+            if not idxs:
+                continue
+            done.update(idxs)
+            with self.area_ctx(name, idxs):
+                self._update_area(dt, idxs, globals_=(k == 0))
+            if self.state != st0:
+                break                                 # a menu / sleep took over
 
-        self.anim_t += dt
-        if self.fade > 0:
-            self.fade = max(0.0, self.fade - dt * 2.2)
-        self.parts.update(dt)
-        self.update_coop_bond(dt)   # co-op In-Sync closeness (hearts + energy)
+    def partner_update(self, dt):
+        """Online host: Player 1 has a screen open (journal, shop, pause menu...)
+        -- Player 2's world keeps running around them."""
+        with self.area_ctx(self.p_area[1], [1]):
+            self._update_area(dt, [1], globals_=False)
 
-        self.ambient_t += dt
-        if self.ambient_t >= 0.55:
-            self.ambient_t = 0.0
-            acol = {"shop": (255, 220, 120), "bed": (150, 200, 235),
-                    "ladder": (240, 160, 80), "talk": (235, 180, 210),
-                    "quest": (140, 200, 235)}
-            for gx, gy, kind in self._interactables():
-                wx = gx * TILE + TILE / 2
-                wy = gy * TILE + TILE / 2
-                if any(abs(p.x - wx) + abs(p.y - wy) < TILE * 1.7 for p in self.players):
-                    self.parts.sparkle(wx, wy - TILE * 0.4, n=3, color=acol[kind])
-            # the anniversary cabana always wears a gentle float of hearts so it
-            # reads as 'special' next to the other cabanas (discoverability; A3).
-            anniv = getattr(self.world.area, "anniv_cabana", None)
-            if anniv:
-                hx = anniv[0] * TILE + TILE / 2
-                hy = anniv[1] * TILE
-                self.parts.heart_float(hx + random.uniform(-7, 7), hy - TILE * 0.15)
+    def _update_area(self, dt, idxs, globals_=True):
+        """One frame of the CURRENT area for the farmers ``idxs``. ``globals_``:
+        also tick the once-per-frame view/global bits (the first pass only)."""
+        self._ctx_warped = False
+        st0 = self.state
+        if globals_:
+            self.anim_t += dt
+            if self.fade > 0:
+                self.fade = max(0.0, self.fade - dt * 2.2)
+            self.parts.update(dt)
+            self.update_coop_bond(dt)   # co-op In-Sync closeness (hearts + energy)
+
+            self.ambient_t += dt
+            if self.ambient_t >= 0.55:
+                self.ambient_t = 0.0
+                acol = {"shop": (255, 220, 120), "bed": (150, 200, 235),
+                        "ladder": (240, 160, 80), "talk": (235, 180, 210),
+                        "quest": (140, 200, 235)}
+                for gx, gy, kind in self._interactables():
+                    wx = gx * TILE + TILE / 2
+                    wy = gy * TILE + TILE / 2
+                    if any(abs(p.x - wx) + abs(p.y - wy) < TILE * 1.7 for p in self.players):
+                        self.parts.sparkle(wx, wy - TILE * 0.4, n=3, color=acol[kind])
+                # the anniversary cabana always wears a gentle float of hearts so it
+                # reads as 'special' next to the other cabanas (discoverability; A3).
+                anniv = getattr(self.world.area, "anniv_cabana", None)
+                if anniv:
+                    hx = anniv[0] * TILE + TILE / 2
+                    hy = anniv[1] * TILE
+                    self.parts.heart_float(hx + random.uniform(-7, 7), hy - TILE * 0.15)
 
         pressed = pygame.key.get_pressed()
         area = self.world.area
         inputs = self._player_inputs(pressed)   # online host drives P2 from the client
         from .settings import P1_KEYS, P2_KEYS, AREA_HOME as _HOME
-        for i, p in enumerate(self.players):
+        prev = [(p.x, p.y) for p in self.players]
+        for i in idxs:
+            p = self.players[i]
             sit = getattr(p, "sitting", None)
             if sit:
                 # seat sold/moved or we left the house -> quietly stand up
@@ -650,18 +711,24 @@ class Game(HooksMixin, SaveMixin, ActionsMixin, CombatMixin, FarmMixin, FishingM
                 else:
                     self.parts.footstep(p.x, p.y + 6)
                 self.audio.play("step")
+        if not self.independent():
+            self._leash(area, prev)             # one shared screen: nobody walks off it
 
-        # warps (co-op: both move together)
+        # warps: online each farmer takes their own door; local co-op moves together
         for warp in area.warps:
-            for p in self.players:
+            for i in idxs:
+                p = self.players[i]
                 if int(p.x // TILE) == warp["gx"] and int(p.y // TILE) == warp["gy"]:
-                    self.warp(warp["to"], warp["spawn"])
+                    if self.independent():
+                        self.warp_player(i, warp["to"], warp["spawn"])
+                    else:
+                        self.warp(warp["to"], warp["spawn"])
                     return
 
-        for st in self.fishing.values():
-            st.update(dt)
+        for i in idxs:
+            self.fishing[i].update(dt)
 
-        if self.fishing_banner:
+        if globals_ and self.fishing_banner:
             txt, col, t = self.fishing_banner
             t -= dt
             self.fishing_banner = (txt, col, t) if t > 0 else None
@@ -673,13 +740,16 @@ class Game(HooksMixin, SaveMixin, ActionsMixin, CombatMixin, FarmMixin, FishingM
             for an in self.animals:
                 an.update(dt, area)
 
+        here = [self.players[i] for i in idxs]
         for m in self.monsters:
-            m.update(dt, self.players, area)
+            m.update(dt, here, area)
         self.monsters = [m for m in self.monsters if m.hp > 0]
 
-        self._run_hooks("_on_update_", dt)   # domain per-frame logic
-        if self.state != "play" or self.world.area is not area:
-            return                           # a hook warped / opened a menu
+        self._run_hooks("_on_area_update_", dt)  # per-area domain logic (every occupied area)
+        if globals_:
+            self._run_hooks("_on_update_", dt)   # once-per-frame domain logic (view)
+        if self.state != st0 or self.world.area is not area or self._ctx_warped:
+            return                               # a hook warped / opened a menu
 
         # beach crabs: cosmetic critters that scuttle the tideline (empty list off
         # the beach, so this is a no-op elsewhere). No collision / no damage.
@@ -699,48 +769,71 @@ class Game(HooksMixin, SaveMixin, ActionsMixin, CombatMixin, FarmMixin, FishingM
                 c["x"] = max(c["home_x"] - c["rng"], min(c["home_x"] + c["rng"], c["x"]))
 
         # red flash + shake when a player was just hit
-        for p in self.players:
+        for p in here:
             if p.hurt_cd > 0.92:
                 self.hurt_flash = max(self.hurt_flash, 0.7)
                 self.add_shake(5)
 
-        # the cabana's "needs two players" hint drifts up and fades out
-        if self._anniv_hint is not None:
-            self._anniv_hint[1] -= dt * 16    # drift up
-            self._anniv_hint[2] -= dt         # life
-            if self._anniv_hint[2] <= 0:
-                self._anniv_hint = None
+        if globals_:
+            # the cabana's "needs two players" hint drifts up and fades out
+            if self._anniv_hint is not None:
+                self._anniv_hint[1] -= dt * 16    # drift up
+                self._anniv_hint[2] -= dt         # life
+                if self._anniv_hint[2] <= 0:
+                    self._anniv_hint = None
 
-        # floating popups (xp / gold / level-up)
-        for pu in self.popups:
-            pu[1] -= dt * 26          # drift up
-            pu[4] -= dt               # life
-        self.popups = [pu for pu in self.popups if pu[4] > 0]
+            # floating popups (xp / gold / level-up)
+            for pu in self.popups:
+                pu[1] -= dt * 26          # drift up
+                pu[4] -= dt               # life
+            self.popups = [pu for pu in self.popups if pu[4] > 0]
 
-        # juice decay
-        self.shake = max(0.0, self.shake - dt * 38)
-        self.hurt_flash = max(0.0, self.hurt_flash - dt * 1.6)
+            # juice decay
+            self.shake = max(0.0, self.shake - dt * 38)
+            self.hurt_flash = max(0.0, self.hurt_flash - dt * 1.6)
 
-        # ambient drifting motes / falling leaves (outdoors)
-        self.leaf_t += dt
-        if self.leaf_t > 0.5 and area.name in (AREA_FARM, AREA_TOWN, AREA_FOREST):
-            self.leaf_t = 0.0
-            mx = self.cam.x + random.uniform(0, SCREEN_W)
-            my = self.cam.y + random.uniform(0, SCREEN_H)
-            self.parts.mote(mx, my, night=self.night)
+            # ambient drifting motes / falling leaves (outdoors)
+            self.leaf_t += dt
+            if self.leaf_t > 0.5 and area.name in (AREA_FARM, AREA_TOWN, AREA_FOREST):
+                self.leaf_t = 0.0
+                mx = self.cam.x + random.uniform(0, SCREEN_W)
+                my = self.cam.y + random.uniform(0, SCREEN_H)
+                self.parts.mote(mx, my, night=self.night)
 
         # player death -> respawn at farm, lose a little gold
-        for p in self.players:
+        for i in idxs:
+            p = self.players[i]
             if p.health <= 0:
                 p.health = self._max_hp(p)
                 p.energy = int(MAX_ENERGY * 0.5)
                 self.gold = max(0, self.gold - 50)
-                self.warp(AREA_FARM, (12, 12))
+                if self.independent():
+                    self.warp_player(i, AREA_FARM, (12, 12))
+                else:
+                    self.warp(AREA_FARM, (12, 12))
                 self.ui.log(f"{p.name} fainted! Rescued home (-50g).")
-                break
+                return
 
-        self._update_camera(area)
-        self.ui.update(dt)
+        if globals_:
+            self._update_camera(area)
+            self.ui.update(dt)
+        elif self.world.current != self.view_area():
+            self._update_camera(area, focus=idxs[0])   # the partner's own camera
+
+    def _leash(self, area, prev):
+        """Local co-op shares ONE screen: a farmer can't walk so far from the
+        other that either would leave it (the camera frames their midpoint)."""
+        a, b = self.players[0], self.players[1]
+        for axis, lim, size in (("x", SCREEN_W - TILE * 3, area.w * TILE),
+                                ("y", SCREEN_H - TILE * 4, area.h * TILE)):
+            if size <= lim:
+                continue
+            k = 0 if axis == "x" else 1
+            d_new = abs(getattr(a, axis) - getattr(b, axis))
+            d_old = abs(prev[0][k] - prev[1][k])
+            if d_new > lim and d_new > d_old:
+                setattr(a, axis, prev[0][k])
+                setattr(b, axis, prev[1][k])
 
     # ---------- sleep state ----------
     def update_sleep(self, dt):
