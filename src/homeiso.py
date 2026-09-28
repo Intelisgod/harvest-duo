@@ -230,6 +230,24 @@ DROP = {}            # id(item) -> ticks (ms) it was put down
 LIFT = {}            # id(item) -> px it is held above its surface
 
 
+def _drop_puff(scr, ox, oy, pl, x, y, h):
+    """A soft ring of dust where a dropped item just landed."""
+    t0 = DROP.get(id(pl))
+    if t0 is None:
+        return
+    t = (pygame.time.get_ticks() - t0) / 1000.0
+    if not 0.12 <= t < 0.42:
+        return
+    k = (t - 0.12) / 0.30
+    cx, cy = proj(ox, oy, x, y)
+    cy -= h
+    r = 5 + 9 * k
+    lay = pygame.Surface((int(r * 2 + 4), int(r + 4)), pygame.SRCALPHA)
+    pygame.draw.ellipse(lay, (255, 250, 236, int(150 * (1 - k))),
+                        (2, 2, int(r * 2), int(r)), 2)
+    scr.blit(lay, (cx - r - 2, cy - r / 2 - 2))
+
+
 def top_lift(pl):
     """Extra height (px) for a tabletop item right now: held = floating,
     just dropped = a quick fall + two small bounces."""
@@ -601,7 +619,7 @@ def draw_room(game, build=False, players=True):
                 base = 0
                 dgx, dgy = pl.gx, pl.gy
             items.append((dgx, dgy, pl.kind, pl.color, sfw, sfh, "top",
-                          (px, py, base + top_lift(pl), pl.on, pl.rot), 0))
+                          (px, py, base + top_lift(pl), pl.on, pl.rot, pl), 0))
             continue
         grp = group_of(pl)
         if grp == ():
@@ -653,6 +671,8 @@ def draw_room(game, build=False, players=True):
         elif lay == "top":
             isofurn.draw_top(scr, Pf, obj[0], obj[1], kind, col, obj[2],
                              on=obj[3], rot=obj[4])
+            if len(obj) > 5:
+                _drop_puff(scr, ox, oy, obj[5], obj[0], obj[1], obj[2])
         else:
             onv, sits, cont = obj
             extra = ([op for s in sits for op in _sitter_ops(scr, ox, oy, *s)]
