@@ -144,6 +144,27 @@ def _tv_art(surf, quad):
             raise
 
 
+# optional painter for LIVING pieces -- the aquarium's water box (real fish)
+# and the growth stages of plant / cactus_small / vase_flowers:
+# fn(surf, P, kind, where, base, color) -> True when it painted that part
+# (False = stock art). ``where``: the tank's cells, or the piece's centre.
+# Set by systems/homelife_system.py.
+LIVE_ART = None
+
+
+def _live_art(surf, P, kind, where, base, color):
+    if LIVE_ART is None:
+        return False
+    try:
+        return bool(LIVE_ART(surf, P, kind, where, base, color))
+    except Exception:
+        from .systems import hooks as _hooks    # logged / strict like any hook
+        _hooks._log_hook_error("_life_art")
+        if _hooks._STRICT:
+            raise
+        return False
+
+
 def _item_tint(name):
     """Stable bright colour per item id (fridge shelf display)."""
     pal = ((226, 120, 120), (240, 196, 90), (150, 200, 120), (130, 170, 226),
@@ -399,7 +420,9 @@ def draw(surf, P, gx, gy, fw, fh, kind, color, rot=0, on=False, extra_ops=None,
             for dx, dy, r in ((0, -6, 11), (-7, 0, 8), (7, -1, 8), (0, 2, 9)):
                 pygame.draw.circle(surf, (74, 160, 92), (int(c[0] + dx), int(c[1] + dy)), r)
             pygame.draw.circle(surf, (96, 188, 116), (int(c[0] - 3), int(c[1] - 8)), 5)
-        op(x0 + 0.20, y0 + 0.20, x1 - 0.20, y1 - 0.20, 12, 34, _fol)
+        op(x0 + 0.20, y0 + 0.20, x1 - 0.20, y1 - 0.20, 12, 34,
+           lambda: _live_art(surf, _P0, kind, (gx + fw / 2.0, gy + fh / 2.0), 12, color)
+           or _fol())
 
     elif kind == "lamp":
         box(x0 + 0.40, y0 + 0.40, x1 - 0.40, y1 - 0.40, 3, (76, 78, 86))         # base
@@ -555,8 +578,13 @@ def draw(surf, P, gx, gy, fw, fh, kind, color, rot=0, on=False, extra_ops=None,
             for u, v in ((0.45, 0.30), (0.49, 0.20)):                             # bubbles
                 c = fp(u, v)
                 pygame.draw.circle(surf, (220, 240, 248), (int(c[0]), int(c[1])), 1)
-        box(x0 + 0.12, y0 + 0.12, x1 - 0.12, y1 - 0.12, 20, (118, 178, 206),
-            base=14, decor=_aq)                                                   # water tank
+        def _tank():                                                          # water tank
+            cells = frozenset((int(round(gx)) + i, int(round(gy)) + j)
+                              for i in range(fw) for j in range(fh))
+            if not _live_art(surf, _P0, kind, cells, 14, color):
+                _aq(_box(surf, P, x0 + 0.12, y0 + 0.12, x1 - 0.12, y1 - 0.12, 20,
+                         (118, 178, 206), base=14))
+        op(x0 + 0.12, y0 + 0.12, x1 - 0.12, y1 - 0.12, 14, 34, _tank)
         box(x0 + 0.10, y0 + 0.10, x1 - 0.10, y1 - 0.10, 3, (60, 62, 70), base=34)  # lid
 
     elif kind == "record_player":
@@ -805,6 +833,9 @@ def draw_top(surf, P, x, y, kind, color, base, on=False, rot=0):
     """Draw one tabletop item centred on tile point (x, y), `base` px up.
     `rot` (0-3 quarter turns) turns items that have a front (frames, lamps,
     mirrors, mugs...): 0 faces +y (camera-left), 1 +x... like furniture."""
+    if kind in ("cactus_small", "vase_flowers") and _live_art(surf, P, kind, (x, y), base,
+                                                              color):
+        return                                 # a growing plant (Placed.data)
     c = _up(P(x, y), base)
     cx, cy = int(c[0]), int(c[1])
     wood = (150, 110, 70)
@@ -1298,8 +1329,10 @@ def draw_group(surf, P, kind, color, cells, rot=0, on=False, extra_ops=None):
 
     elif kind == "aquarium":                        # one long tank, fish per module
         _prism(surf, P, [_shrink(lp, 0.10) for lp in loops], 14, _dk(wood, 0.9))
-        _prism(surf, P, [_shrink(lp, 0.12) for lp in loops], 20, (118, 178, 206), base=14)
-        for (cx, cy, side) in detail_faces():
+        live = _live_art(surf, P, kind, frozenset(cells), 14, color)
+        if not live:
+            _prism(surf, P, [_shrink(lp, 0.12) for lp in loops], 20, (118, 178, 206), base=14)
+        for (cx, cy, side) in (() if live else detail_faces()):
             if side == "x":
                 lo = 0.12 if (cx, cy - 1) not in cells else 0.0
                 hi = 0.12 if (cx, cy + 1) not in cells else 0.0

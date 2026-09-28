@@ -600,6 +600,10 @@ def draw_room(game, build=False, players=True):
                 continue                # seated: drawn as part of the seat piece
             items.append((p.x / 48.0, p.y / 48.0, None, None, 0, 0,
                           "player", p, 0))
+    # living extras (the house cat...): _home_actors_* hooks -> [(tx, ty, fn(scr, ox, oy))]
+    for n in (game._hook_names("_home_actors_") if hasattr(game, "_hook_names") else ()):
+        for ax, ay, fn in game._call_hook(n) or ():
+            items.append((ax, ay, None, None, 0, 0, "actor", fn, 0))
 
     def depth(it):
         return it[0] + it[1] + (it[4] + it[5]) / 2.0
@@ -619,6 +623,8 @@ def draw_room(game, build=False, players=True):
         elif lay == "top":
             isofurn.draw_top(scr, Pf, obj[0], obj[1], kind, col, obj[2],
                              on=obj[3])
+        elif lay == "actor":
+            obj(scr, ox, oy)
         else:
             onv, sits, cont = obj
             extra = ([op for s in sits for op in _sitter_ops(scr, ox, oy, *s)]

@@ -813,6 +813,10 @@ class HomeMixin:
     def _home_client_interact(self, p, fr):
         """LAN client: open the home screens locally. True = handled here,
         None = let the host run the press (seats), False = not ours."""
+        life = getattr(self, "_life_client_interact", None)    # HomeLifeMixin: cat,
+        r = life(p, fr) if life else False                      # aquarium, plants
+        if r is not False:
+            return r
         if fr.kind == "fridge":
             self._open_fridge(1, fr, client=True)
             return True
