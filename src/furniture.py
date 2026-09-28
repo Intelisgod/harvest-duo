@@ -103,15 +103,64 @@ CATALOG = [
     # ---- showpieces (2026-09-28): systems/showpiece_system.py ----
     ("telescope",      "Telescope",      1, 1, 260, "Decor",   "ground"),
     ("arcade_cabinet", "Arcade Cabinet", 1, 1, 380, "Decor",   "ground"),
+    # ---- catalogue expansion (2026-09-28): 3D models live in furnpack.py ----
+    ("side_table",        "Side Table",        1, 1, 60,  "Living",   "ground"),
+    ("writing_desk",      "Writing Desk",      2, 1, 210, "Living",   "ground"),
+    ("bean_bag",          "Bean Bag",          1, 1, 90,  "Living",   "ground"),
+    ("floor_cushion",     "Floor Cushion",     1, 1, 40,  "Living",   "ground"),
+    ("tall_plant",        "Monstera",          1, 1, 110, "Living",   "ground"),
+    ("floor_vase",        "Pampas Vase",       1, 1, 85,  "Living",   "ground"),
+    ("grandfather_clock", "Grandfather Clock", 1, 1, 380, "Living",   "ground"),
+    ("tv_stand",          "Media Console",     2, 1, 170, "Living",   "ground"),
+    ("floor_mirror",      "Floor Mirror",      1, 1, 150, "Bedroom",  "ground"),
+    ("shoe_rack",         "Shoe Rack",         1, 1, 75,  "Bedroom",  "ground"),
+    ("laundry_basket",    "Laundry Basket",    1, 1, 35,  "Bedroom",  "ground"),
+    ("teddy_giant",       "Giant Teddy",       1, 1, 160, "Bedroom",  "ground"),
+    ("coffee_machine",    "Coffee Station",    1, 1, 280, "Kitchen",  "ground"),
+    ("bar_cart",          "Bar Cart",          1, 1, 150, "Kitchen",  "ground"),
+    ("spice_rack",        "Spice Rack",        1, 1, 55,  "Kitchen",  "wall"),
+    ("bathtub",           "Clawfoot Tub",      2, 1, 480, "Bath",     "ground"),
+    ("bath_sink",         "Pedestal Sink",     1, 1, 180, "Bath",     "ground"),
+    ("toilet",            "Toilet",            1, 1, 160, "Bath",     "ground"),
+    ("shower_booth",      "Shower",            1, 1, 360, "Bath",     "ground"),
+    ("bath_mat",          "Bath Mat",          2, 1, 35,  "Bath",     "floor"),
+    ("towel_rack",        "Towel Rail",        1, 1, 50,  "Bath",     "wall"),
+    ("lantern",           "Lantern",           1, 1, 65,  "Decor",    "ground"),
+    ("dollhouse",         "Dollhouse",         1, 1, 190, "Decor",    "ground"),
+    ("guitar_stand",      "Guitar",            1, 1, 240, "Decor",    "ground"),
+    ("christmas_tree",    "Christmas Tree",    1, 1, 300, "Decor",    "ground"),
+    ("string_lights",     "String Lights",     1, 1, 60,  "Decor",    "wall"),
+    ("wall_calendar",     "Calendar",          1, 1, 30,  "Decor",    "wall"),
+    ("memory_board",      "Memory Board",      1, 1, 70,  "Decor",    "wall"),
+    ("hanging_plant",     "Hanging Plant",     1, 1, 65,  "Decor",    "wall"),
+    ("laptop",            "Laptop",            1, 1, 220, "Tabletop", "top"),
+    ("alarm_clock",       "Alarm Clock",       1, 1, 30,  "Tabletop", "top"),
+    ("teapot_set",        "Tea Set",           1, 1, 60,  "Tabletop", "top"),
+    ("snow_globe",        "Snow Globe",        1, 1, 45,  "Tabletop", "top"),
+    ("hourglass",         "Hourglass",         1, 1, 35,  "Tabletop", "top"),
+    ("succulent",         "Succulent",         1, 1, 20,  "Tabletop", "top"),
+    ("jewelry_box",       "Jewelry Box",       1, 1, 70,  "Tabletop", "top"),
+    ("perfume_set",       "Perfume Set",       1, 1, 55,  "Tabletop", "top"),
+    ("radio",             "Retro Radio",       1, 1, 90,  "Tabletop", "top"),
+    ("teddy_bear",        "Teddy Bear",        1, 1, 40,  "Tabletop", "top"),
+    ("lava_lamp",         "Lava Lamp",         1, 1, 55,  "Tabletop", "top"),
+    ("cake_stand",        "Cake Stand",        1, 1, 50,  "Tabletop", "top"),
+    ("board_game",        "Board Game",        1, 1, 40,  "Tabletop", "top"),
+    ("trophy",            "Trophy",            1, 1, 100, "Tabletop", "top"),
+    ("music_box",         "Music Box",         1, 1, 85,  "Tabletop", "top"),
+    ("bonsai",            "Bonsai",            1, 1, 95,  "Tabletop", "top"),
+    ("fish_bowl",         "Fish Bowl",         1, 1, 60,  "Tabletop", "top"),
+    ("dish_rack",         "Dish Rack",         1, 1, 25,  "Tabletop", "top"),
 ]
 CAT = {c[0]: {"label": c[1], "w": c[2], "h": c[3], "price": c[4],
               "cat": c[5], "layer": c[6]} for c in CATALOG}
-CATEGORIES = ["Living", "Bedroom", "Kitchen", "Decor", "Crafting", "Tabletop"]
+CATEGORIES = ["Living", "Bedroom", "Kitchen", "Decor", "Crafting", "Tabletop", "Bath"]
 
 # flat-topped ground furniture that tabletop decor may sit on
 SURFACES = {"dining_table", "coffee_table", "counter", "kitchen_island",
             "dresser", "nightstand", "vanity",
-            "piano", "aquarium", "fireplace", "bookshelf", "wardrobe"}
+            "piano", "aquarium", "fireplace", "bookshelf", "wardrobe",
+            "side_table", "writing_desk", "tv_stand", "bar_cart"}
 # ---- tabletop placement (free-form, 2026-09-28) ----
 # The usable top of each surface kind, as a rect in the piece's CANONICAL
 # (rot 0) footprint space, in tiles: (x0, y0, x1, y1). Items may sit anywhere
@@ -122,6 +171,9 @@ SURFACE_TOP = {
     "bookshelf": (0.08, 0.08, None, None),
     "wardrobe": (0.08, 0.08, None, None),
     "aquarium": (0.10, 0.10, None, None),
+    "side_table": (0.18, 0.18, 0.82, 0.82),  # just the small top slab
+    "tv_stand": (0.08, 0.16, None, 0.84),
+    "bar_cart": (0.26, 0.18, 0.82, 0.82),    # top shelf, clear of the handle
 }
 SURFACE_INSET = 0.07
 # footprint radius (tiles) of each tabletop item: they never overlap, and they
@@ -131,6 +183,12 @@ TOP_RADIUS = {
     "fruit_bowl": 0.13, "desk_mirror": 0.13, "photo_frame": 0.13,
     "desk_lamp": 0.10, "vase_flowers": 0.09, "pen_holder": 0.08,
     "candle_small": 0.07, "coffee_mug": 0.07, "cactus_small": 0.07,
+    # 2026-09 catalogue expansion
+    "laptop": 0.15, "alarm_clock": 0.07, "teapot_set": 0.15, "snow_globe": 0.09,
+    "hourglass": 0.10, "succulent": 0.09, "jewelry_box": 0.11, "perfume_set": 0.12,
+    "radio": 0.13, "teddy_bear": 0.09, "lava_lamp": 0.09, "cake_stand": 0.14,
+    "board_game": 0.17, "trophy": 0.10, "music_box": 0.10, "bonsai": 0.13,
+    "fish_bowl": 0.09, "dish_rack": 0.14,
 }
 TOP_RADIUS_DEFAULT = 0.11
 # how fine free placement snaps (tiles); Shift in Build mode = no snapping
@@ -153,19 +211,24 @@ def surface_top_rect(kind, fw, fh):
 # seats the players can actually SIT on (interact -> sit, move/action -> stand).
 # (2026-09-28: chairs and the piano bench joined -- homeiso._sitter_ops lifts a
 # side-facing sitter clear of the chair's narrow backrest.)
-SEATS = {"stool", "bench", "sofa", "armchair", "chair", "piano_bench"}
+SEATS = {"stool", "bench", "sofa", "armchair", "chair", "piano_bench",
+         "bean_bag", "floor_cushion"}
 # cushion-top height (px) per seat kind -- the sitter's hips land here
 SEAT_TOP = {"chair": 15, "stool": 15, "piano_bench": 18, "bench": 20,
-            "sofa": 16, "armchair": 16}
+            "sofa": 16, "armchair": 16, "bean_bag": 10, "floor_cushion": 7}
 # things a sitter naturally turns to face when they're right next to them
 SIT_FACE = {"piano", "dining_table", "coffee_table", "counter",
-            "kitchen_island", "workbench", "vanity"}
+            "kitchen_island", "workbench", "vanity", "writing_desk"}
 # only BACKLESS seats may swivel toward a SIT_FACE neighbour -- on an
 # armchair or sofa you always sit the way the backrest points
 SWIVEL_SEATS = {"stool", "bench", "piano_bench"}
 # appliances/lights that toggle on/off with interact (visual state on Placed.on)
 TOGGLE = {"tv", "lamp", "wall_lamp", "desk_lamp", "neon_sign", "fireplace",
-          "microwave", "standing_fan", "record_player", "candle_small"}
+          "microwave", "standing_fan", "record_player", "candle_small",
+          # 2026-09 catalogue expansion
+          "grandfather_clock", "coffee_machine", "bathtub", "shower_booth",
+          "lantern", "christmas_tree", "string_lights", "laptop", "radio",
+          "lava_lamp", "music_box"}
 TOGGLE.add("arcade_cabinet")        # showpieces: its screen glows while it's on
 
 # ---- merging & centre-snapping ----
@@ -240,6 +303,11 @@ def _draw_base(item_id, color, t=TILE, on=True):
     dk, lt = _dark(color), _light(color)
     wood = (140, 96, 60)
     metal = (180, 184, 192)
+
+    from . import furnpack_icons                # 2026-09 expansion-pack icons
+    if item_id in furnpack_icons.ICONS:
+        furnpack_icons.draw_icon(item_id, s, t, color, on)
+        return s
 
     if item_id == "sofa":
         pygame.draw.rect(s, dk, (4, 6, w - 8, h - 10), border_radius=7)

@@ -405,6 +405,204 @@ def _hull(pts):
     return lo[:-1] + hi[:-1]
 
 
+# ---------------------------------------------- 2026-09 catalogue expansion
+def _rot_rect(uc, zc, w_px, h_px, ang, d):
+    """A rectangle in the wall plane (w/h in px), turned `ang` radians."""
+    ca, sa = math.cos(ang), math.sin(ang)
+    out = []
+    for x, y in ((-w_px / 2, h_px / 2), (w_px / 2, h_px / 2), (w_px / 2, -h_px / 2),
+                 (-w_px / 2, -h_px / 2)):
+        rx, ry = x * ca - y * sa, x * sa + y * ca
+        out.append((uc + rx / U_PX, d, zc + ry))
+    return out
+
+
+def _by_depth(W, items, key_u):
+    """Painter order for little pieces standing on a wall shelf."""
+    return sorted(items, key=(lambda it: key_u(it)) if W.back else (lambda it: -key_u(it)))
+
+
+def _spice_rack(W, color):
+    W.shadow(W.rect_pts(0.10, 0.90, 26, 60, 0), a=50)
+    W.slab(0.10, 0.90, 26, 60, 0, 0.03, _dk(color, 0.78))               # back board
+    spices = [(196, 70, 50), (232, 184, 60), (98, 150, 80), (70, 58, 50),
+              (240, 236, 226), (160, 96, 60), (214, 120, 60), (120, 160, 110)]
+    for row, z in enumerate((28, 44)):
+        W.slab(0.10, 0.90, z, z + 2, 0.03, 0.26, color)                   # shelf
+        jars = [(0.16 + k * 0.19, spices[(k + row * 4) % len(spices)]) for k in range(4)]
+        for u0, c in _by_depth(W, jars, lambda j: j[0]):
+            glass = (226, 236, 240)
+            W.slab(u0, u0 + 0.12, z + 2, z + 11, 0.07, 0.21, glass)
+            W.poly(c, W.rect_pts(u0 + 0.01, u0 + 0.11, z + 3, z + 8, 0.21))  # contents
+            W.poly((250, 246, 234), W.rect_pts(u0 + 0.03, u0 + 0.09, z + 4, z + 7, 0.21))
+            W.slab(u0, u0 + 0.12, z + 11, z + 13, 0.07, 0.21, _dk(color, 0.7))  # lid
+        W.slab(0.10, 0.90, z + 5, z + 6, 0.26, 0.29, _lt(color, 1.1))       # front rail
+    for u in (0.10, 0.86):                                                 # side cheeks
+        W.slab(u, u + 0.04, 26, 60, 0.03, 0.29, color)
+
+
+def _towel_rack(W, color):
+    W.shadow(W.rect_pts(0.16, 0.84, 20, 46, 0), a=44, du=0.04)
+    metal = (196, 200, 208)
+    for u in (0.16, 0.80):                                                 # wall posts
+        W.slab(u, u + 0.04, 40, 46, 0, 0.18, metal)
+    W.slab(0.14, 0.86, 42, 44, 0.14, 0.18, _lt(metal, 1.05))               # the rail
+    stripe = _lt(color, 1.35) if sum(color) < 600 else _dk(color, 0.8)
+    W.slab(0.24, 0.76, 22, 44, 0.18, 0.21, color, outline=True)           # towel, front
+    W.slab(0.24, 0.76, 44, 46, 0.12, 0.21, _lt(color, 1.08))              # the fold over
+    for z in (25, 28):
+        W.poly(stripe, W.rect_pts(0.24, 0.76, z, z + 1.5, 0.21))
+    for k in range(6):                                                    # fringe
+        u = 0.27 + k * 0.09
+        W.poly(_dk(color, 0.8), [(u, 0.21, 22), (u, 0.21, 19)], 1)
+    W.slab(0.62, 0.70, 33, 35, 0.0, 0.10, metal)                          # hook + flannel
+    W.slab(0.60, 0.72, 24, 34, 0.10, 0.13, (250, 250, 252))
+
+
+def _string_lights(W, color, on):
+    def z_at(u):
+        return 60 - 6 * math.sin(math.pi * ((u * 2) % 1.0))
+    wire = [(i / 40, 0.03, z_at(i / 40)) for i in range(41)]
+    pygame.draw.lines(W.s, (70, 74, 66), False, [W.L(*p) for p in wire], 1)
+    for u in (0.0, 0.5, 1.0):                                              # tacks
+        W.poly((110, 110, 116), W.oval_pts(u, 60, 1.2, 1.2, 0.03, 8))
+    warm = (255, 226, 150)
+    cols = [color, warm, _mix(color, warm, 0.5), warm]
+    for k, u in enumerate((0.12, 0.25, 0.38, 0.62, 0.75, 0.88)):
+        z = z_at(u) - 3
+        c = cols[k % len(cols)]
+        if on:
+            W.glow(u, z - 1, 9, _lt(c, 1.2), a=90)
+        W.poly((96, 100, 92), W.rect_pts(u - 0.01, u + 0.01, z + 1, z + 3, 0.04))   # socket
+        bulb = W.oval_pts(u, z - 1, 1.8, 2.6, 0.05, 10)
+        W.poly(_lt(c, 1.25) if on else _mix(c, (120, 120, 126), 0.55), bulb)
+        if on:
+            W.poly((255, 252, 236), W.oval_pts(u - 0.005, z - 0.5, 0.7, 1.0, 0.05, 6))
+
+
+def _wall_calendar(W, color):
+    W.poly((150, 146, 150), [(0.5, 0.01, 62), (0.30, 0.01, 57), (0.70, 0.01, 57), (0.5, 0.01, 62)], 1)
+    W.poly((120, 116, 124), W.oval_pts(0.5, 62, 1.2, 1.2, 0.02, 8))      # the nail
+    page = W.rect_pts(0.26, 0.74, 24, 57, 0)
+    W.shadow(page, a=50)
+    W.slab(0.26, 0.74, 24, 57, 0, 0.02, (250, 248, 242))
+    d = 0.02
+    W.poly(_lt(color, 1.3), W.rect_pts(0.29, 0.71, 44, 55, d))             # the picture:
+    W.poly(_mix(color, (90, 160, 100), 0.4), [(0.29, d, 44), (0.29, d, 48), (0.45, d, 51),
+                                              (0.58, d, 47), (0.71, d, 50), (0.71, d, 44)])
+    for fu in (0.40, 0.56):                                               # two flowers
+        W.poly((250, 250, 252), W.oval_pts(fu, 49, 1.6, 1.6, d, 8))
+        W.poly((250, 210, 90), W.oval_pts(fu, 49, 0.7, 0.7, d, 6))
+    for k in range(7):                                                    # spiral binding
+        W.poly((70, 70, 80), W.oval_pts(0.30 + k * 0.066, 56.5, 0.7, 0.9, d, 6))
+    W.poly(color, W.rect_pts(0.29, 0.71, 41, 43, d))                      # month bar
+    for r in range(5):                                                    # the days
+        for cday in range(7):
+            u = 0.31 + cday * 0.063
+            z = 38 - r * 3
+            W.poly((150, 146, 156), W.rect_pts(u, u + 0.025, z, z + 1, d))
+    hu, hz = 0.31 + 4 * 0.063, 38 - 2 * 3                                  # a date to remember
+    heart = []
+    for i in range(20):
+        t = i / 20 * 2 * math.pi
+        x = 16 * math.sin(t) ** 3
+        y = 13 * math.cos(t) - 5 * math.cos(2 * t) - 2 * math.cos(3 * t) - math.cos(4 * t)
+        heart.append((hu + 0.012 + x * 0.16 / U_PX, d, hz + 0.5 + y * 0.16))
+    W.poly((226, 70, 96), heart, 1)
+
+
+def _memory_board(W, color):
+    fr = W.rect_pts(0.08, 0.92, 26, 62, 0)
+    W.shadow(fr)
+    W.slab(0.08, 0.92, 26, 62, 0, 0.05, color)                            # frame
+    cork = (198, 152, 100)
+    d = 0.05
+    W.poly(cork, W.rect_pts(0.13, 0.87, 29, 59, d))
+    for k in range(14):                                                    # cork speckle
+        u = 0.15 + (k * 0.37) % 0.70
+        z = 31 + (k * 7.3) % 26
+        W.poly(_dk(cork, 0.82), W.rect_pts(u, u + 0.012, z, z + 1, d))
+    W.poly(_dk(color, 0.6), W.rect_pts(0.13, 0.87, 29, 59, d), 1)
+    photos = [(0.30, 48, -0.12, ((240, 170, 190), "heart")),
+              (0.58, 50, 0.10, ((150, 200, 236), "sun")),
+              (0.42, 36, 0.06, ((170, 214, 170), "us"))]
+    for uc, zc, ang, (bg, what) in photos:
+        W.poly((250, 250, 248), _rot_rect(uc, zc, 11, 12, ang, d + 0.01))   # polaroid
+        W.poly(bg, _rot_rect(uc, zc + 1, 8.5, 8, ang, d + 0.01))
+        if what == "heart":
+            h = []
+            for i in range(16):
+                t = i / 16 * 2 * math.pi
+                x = 16 * math.sin(t) ** 3
+                y = 13 * math.cos(t) - 5 * math.cos(2 * t) - 2 * math.cos(3 * t) - math.cos(4 * t)
+                h.append((uc + x * 0.17 / U_PX, d + 0.01, zc + 1 + y * 0.17))
+            W.poly((220, 60, 90), h)
+        elif what == "sun":
+            W.poly((250, 214, 90), W.oval_pts(uc + 0.03, zc + 2, 2, 2, d + 0.01, 8))
+            W.poly((110, 176, 110), _rot_rect(uc, zc - 2, 8.5, 2.5, ang, d + 0.01))
+        else:
+            for k, hc in ((-1, (90, 60, 40)), (1, (230, 190, 90))):          # two little faces
+                W.poly((250, 218, 190), W.oval_pts(uc + k * 0.05, zc + 1, 1.8, 1.8, d + 0.01, 8))
+                W.poly(hc, W.rect_pts(uc + k * 0.05 - 0.05, uc + k * 0.05 + 0.05,
+                                      zc + 2.4, zc + 3.3, d + 0.01))
+        pin = _rot_rect(uc, zc + 6, 1, 1, 0, d + 0.02)
+        W.poly((220, 64, 64) if what != "sun" else (70, 110, 220), pin)
+    for uc, zc, c in ((0.72, 36, (250, 232, 120)), (0.22, 34, (170, 230, 206))):   # notes
+        W.poly(c, _rot_rect(uc, zc, 9, 9, 0.08, d + 0.01))
+        for k in range(3):
+            W.poly(_dk(c, 0.6), _rot_rect(uc, zc + 2 - k * 2, 6, 0.6, 0.08, d + 0.012))
+        W.poly((96, 180, 96), W.oval_pts(uc, zc + 4.5, 1, 1, d + 0.02, 6))
+
+
+def _hanging_plant(W, color):
+    metal = (96, 90, 96)
+    W.shadow(W.rect_pts(0.44, 0.56, 56, 64, 0), a=40)
+    W.slab(0.44, 0.56, 56, 64, 0, 0.03, metal)                             # wall plate
+    W.slab(0.48, 0.52, 61, 63, 0.03, 0.40, metal)                          # arm
+    W.poly(metal, [(0.5, 0.03, 57), (0.5, 0.03, 60), (0.5, 0.22, 61)])     # brace
+    hook = (0.5, 0.36, 61)
+    pot_c, pot_d, z0, z1 = 0.5, 0.36, 30, 38
+    lo = [W.L(*p) for p in W.flat_oval(pot_c, pot_d, z0, 0.10)]
+    hi = [W.L(*p) for p in W.flat_oval(pot_c, pot_d, z1, 0.15)]
+    # trailing vines behind the pot first (the far ones)
+    vines = [(-0.12, 0.06, 14), (0.13, -0.02, 18), (-0.02, 0.14, 10), (0.08, 0.12, 16),
+             (-0.14, -0.06, 20)]
+
+    def vine(du, dd, zend):
+        pts = []
+        for k in range(8):
+            t = k / 7
+            pts.append((pot_c + du * (1 + t * 0.4), pot_d + dd, z1 - 2 - t * (z1 - 2 - zend)))
+        pygame.draw.lines(W.s, (74, 132, 74), False, [W.L(*p) for p in pts], 1)
+        for k, p in enumerate(pts[1:]):
+            s = 1.9 - k * 0.12
+            c = (84, 164, 92) if k % 2 else (62, 136, 76)
+            W.poly(c, W.oval_pts(p[0] + (0.02 if k % 2 else -0.02), p[2], s, s * 0.8, p[1], 8))
+    back = [v for v in vines if (v[1] < 0.05)]
+    front = [v for v in vines if v not in back]
+    for v in back:
+        vine(*v)
+    hull_pts = _hull(lo + hi)
+    pygame.draw.polygon(W.s, _dk(color, 0.82), hull_pts)
+    half = [p for p in lo + hi if p[0] <= W.L(pot_c, pot_d, z0)[0]]
+    if len(half) >= 3:
+        pygame.draw.polygon(W.s, color, _hull(half))
+    pygame.draw.polygon(W.s, _dk(color, 0.5), hull_pts, 1)
+    pygame.draw.polygon(W.s, (86, 64, 46), hi)                             # soil
+    pygame.draw.polygon(W.s, _lt(color, 1.15), hi, 2)
+    for a in (0.2, 2.3, 4.3):                                              # ropes
+        rim = (pot_c + math.cos(a) * 0.15, pot_d + math.sin(a) * 0.15, z1)
+        W.poly((226, 214, 190), [hook, rim], 1)
+    for du, dd, z, r in ((-0.06, 0.0, 41, 3.2), (0.06, 0.02, 42, 3.0), (0.0, -0.04, 44, 3.4),
+                         (0.02, 0.06, 40, 2.8)):
+        W.poly((70, 150, 84), W.oval_pts(pot_c + du, z, r, r * 0.8, pot_d + dd, 10))
+        W.poly((104, 186, 110), W.oval_pts(pot_c + du - 0.01, z + 0.8, r * 0.5, r * 0.4,
+                                           pot_d + dd, 8))
+    for v in front:
+        vine(*v)
+    W.poly((150, 150, 156), W.oval_pts(0.5, 60, 1.2, 1.4, 0.36, 8), 1)   # hook ring
+
+
 def _generic(W, color):
     fr = W.rect_pts(0.2, 0.8, 32, 56, 0)
     W.shadow(fr)
@@ -460,6 +658,18 @@ def sprite(kind, color, side, on=True, sky=("day", "sunny"), bare=False, art=Non
             _wall_mirror(W, color)
         elif kind == "neon_sign":
             _neon(W, color, on)
+        elif kind == "spice_rack":                  # 2026-09 catalogue expansion
+            _spice_rack(W, color)
+        elif kind == "towel_rack":
+            _towel_rack(W, color)
+        elif kind == "string_lights":
+            _string_lights(W, color, on)
+        elif kind == "wall_calendar":
+            _wall_calendar(W, color)
+        elif kind == "memory_board":
+            _memory_board(W, color)
+        elif kind == "hanging_plant":
+            _hanging_plant(W, color)
         else:
             _generic(W, color)
         if len(_cache) > 160:

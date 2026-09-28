@@ -27,7 +27,7 @@ import random
 from ..settings import TILE, MAX_ENERGY, AREA_HOME
 from .. import furniture as F
 
-_MIRRORS = {"vanity", "wall_mirror", "desk_mirror"}
+_MIRRORS = {"vanity", "wall_mirror", "desk_mirror", "floor_mirror"}
 _CLOTHES = {"wardrobe", "dresser"}
 _BOOKS = {"bookshelf", "book_stack"}
 # lights that glow at night when switched on: kind -> (lift px, radius, colour)
@@ -36,6 +36,10 @@ _GLOW = {
     "desk_lamp": (30, 80, (255, 220, 160)), "neon_sign": (40, 100, (255, 120, 200)),
     "fireplace": (20, 150, (255, 150, 70)), "tv": (26, 90, (140, 180, 255)),
     "candle_small": (26, 56, (255, 200, 120)), "aquarium": (20, 70, (120, 200, 240)),
+    # catalogue expansion (2026-09-28)
+    "lantern": (16, 74, (255, 196, 110)), "christmas_tree": (34, 96, (255, 214, 140)),
+    "string_lights": (52, 96, (255, 214, 150)), "lava_lamp": (34, 54, (255, 150, 196)),
+    "laptop": (32, 44, (150, 196, 255)),
 }
 TIPS = [
     ("The Rain Almanac", "Rain and storms water every tilled tile for you. Check "

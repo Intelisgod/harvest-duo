@@ -47,8 +47,21 @@ HEIGHT = {
     "piano": 42, "piano_bench": 18, "aquarium": 37, "record_player": 20, "crib": 32,
     "toy_chest": 18, "sink": 24, "microwave": 40, "kitchen_island": 27,
     "easel": 48, "globe": 36, "cat_tower": 40, "standing_fan": 44,
+    # 2026-09 catalogue expansion (models live in furnpack.py)
+    "side_table": 23, "writing_desk": 24, "bean_bag": 23, "floor_cushion": 7,
+    "tall_plant": 60, "floor_vase": 66, "grandfather_clock": 66, "tv_stand": 19,
+    "floor_mirror": 60, "shoe_rack": 26, "laundry_basket": 28, "teddy_giant": 46,
+    "coffee_machine": 44, "bar_cart": 36, "bathtub": 24, "bath_sink": 35,
+    "toilet": 37, "shower_booth": 60, "lantern": 38, "dollhouse": 50,
+    "guitar_stand": 66, "christmas_tree": 66,
 }
 HEIGHT.update({"telescope": 58, "arcade_cabinet": 66})     # showpieces (2026-09-28)
+
+
+def _pack():
+    """The expansion-pack models (imported lazily: it imports this module)."""
+    from . import furnpack
+    return furnpack
 
 
 def _box(surf, P, x0, y0, x1, y1, h, color, base=0, faces=True):
@@ -261,7 +274,7 @@ def draw(surf, P, gx, gy, fw, fh, kind, color, rot=0, on=False, extra_ops=None,
         _diamond(surf, P, x0 + 0.22, y0 + 0.22, x1 - 0.22, y1 - 0.22, _lt(color, 1.2))
         return
 
-    elif kind in ("coffee_table", "dining_table", "side_table"):
+    elif kind in ("coffee_table", "dining_table"):   # (side_table: furnpack)
         toph = 5 if kind == "coffee_table" else 6
         legh = 17 if kind == "coffee_table" else 18
         for lx, ly in ((x0 + 0.10, y0 + 0.12), (x1 - 0.22, y0 + 0.12),
@@ -1001,6 +1014,11 @@ def draw(surf, P, gx, gy, fw, fh, kind, color, rot=0, on=False, extra_ops=None,
                       _up(P(x1 - 0.10, y0 + 0.74), 66), _up(P(x0 + 0.10, y0 + 0.74), 66)]
                 pygame.draw.lines(surf, (255, 150, 210), True, tq, 2)
         box(x0 + 0.10, y0 + 0.12, x1 - 0.10, y0 + 0.74, 10, trim, base=56, decor=_marquee)
+    elif kind in _pack().GROUND:              # 2026-09 catalogue expansion
+        if _pack().draw_ground(kind, surf=surf, P=P, box=box, op=op, x0=x0, y0=y0,
+                               x1=x1, y1=y1, color=color, on=on, rot=rot,
+                               vx1=vx1, vy1=vy1):
+            return                             # flat floor piece: drawn already
 
     else:                                      # generic cabinet / fallback
         h = HEIGHT.get(kind, 22)
@@ -1038,7 +1056,9 @@ def draw(surf, P, gx, gy, fw, fh, kind, color, rot=0, on=False, extra_ops=None,
 
 TOPH = {"dining_table": 24, "coffee_table": 22, "counter": 27, "kitchen_island": 27,
         "dresser": 26, "nightstand": 22, "vanity": 24,
-        "piano": 42, "aquarium": 37, "fireplace": 30, "bookshelf": 42, "wardrobe": 46}
+        "piano": 42, "aquarium": 37, "fireplace": 30, "bookshelf": 42, "wardrobe": 46,
+        # 2026-09 catalogue expansion
+        "side_table": 23, "writing_desk": 24, "tv_stand": 19, "bar_cart": 28}
 
 
 def surface_height(kind):
@@ -1258,6 +1278,9 @@ def draw_top(surf, P, x, y, kind, color, base, on=False, rot=0):
                              (cx - 6, cy - 1 - i * 2), (cx + 6, cy - 3 - i * 2), 1)
         pygame.draw.circle(surf, (60, 60, 70), (cx - 2, cy - 3), 1)   # notes
         pygame.draw.circle(surf, (60, 60, 70), (cx + 3, cy - 5), 1)
+
+    elif kind in _pack().TOP:                 # 2026-09 catalogue expansion
+        _pack().draw_top(surf, P, x, y, kind, color, base, on=on, rot=rot)
 
     else:                                      # unknown tabletop kind: tiny box
         _box(surf, P, x - 0.10, y - 0.10, x + 0.10, y + 0.10, 5, color, base=base)

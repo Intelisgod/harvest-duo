@@ -56,6 +56,34 @@ FURN_ACTION = {
     "wall_lamp": ("switch the wall lamp", 3),
     # showpieces (2026-09-28, systems/showpiece_system.py)
     "telescope": ("gaze at the stars", 10), "arcade_cabinet": ("play a round of Heart Pong", 14),
+    # (workbench / chest open their own menus; these verbs are just fallbacks)
+    "workbench": ("tinker at the workbench", 4), "chest": ("rummage in the chest", 2),
+    # catalogue expansion (2026-09-28)
+    "side_table": ("set your things down", 3), "writing_desk": ("write a little love note", 8),
+    "bean_bag": ("sink into the bean bag", 12), "floor_cushion": ("sit cross-legged", 7),
+    "tall_plant": ("mist the monstera", 5), "floor_vase": ("fluff the pampas grass", 4),
+    "grandfather_clock": ("wind the grandfather clock", 5),
+    "tv_stand": ("tidy the media console", 4), "floor_mirror": ("strike a pose", 6),
+    "shoe_rack": ("line up the shoes", 3), "laundry_basket": ("fold the laundry", 4),
+    "teddy_giant": ("hug the giant teddy", 14), "coffee_machine": ("brew a fresh coffee", 16),
+    "bar_cart": ("mix a fancy drink", 10), "spice_rack": ("sniff the spices", 3),
+    "bathtub": ("soak in a bubble bath", 24), "bath_sink": ("wash your face", 6),
+    "toilet": ("freshen up", 5), "shower_booth": ("take a warm shower", 18),
+    "bath_mat": ("wiggle your toes on the mat", 3), "towel_rack": ("grab a fluffy towel", 4),
+    "lantern": ("light the lantern", 5), "dollhouse": ("rearrange the dollhouse", 8),
+    "guitar_stand": ("strum a little song", 14),
+    "christmas_tree": ("admire the twinkling tree", 12),
+    "string_lights": ("switch the fairy lights", 5), "wall_calendar": ("check the calendar", 3),
+    "memory_board": ("smile at your memories", 8), "hanging_plant": ("water the hanging plant", 4),
+    "laptop": ("browse on the laptop", 8), "alarm_clock": ("set the alarm", 2),
+    "teapot_set": ("pour a cup of tea", 12), "snow_globe": ("shake the snow globe", 5),
+    "hourglass": ("flip the hourglass", 3), "succulent": ("admire the succulent", 3),
+    "jewelry_box": ("try on some jewelry", 6), "perfume_set": ("spritz some perfume", 5),
+    "radio": ("tune the radio", 8), "teddy_bear": ("squeeze the teddy bear", 7),
+    "lava_lamp": ("watch the lava drift", 6), "cake_stand": ("sneak a slice of cake", 14),
+    "board_game": ("play a board game", 12), "trophy": ("polish the trophy", 4),
+    "music_box": ("wind the music box", 7), "bonsai": ("prune the bonsai", 6),
+    "fish_bowl": ("feed the goldfish", 6), "dish_rack": ("put the dishes away", 4),
 }
 
 # anniversary cabana timing (real seconds): how long a player's "ready" press stays
