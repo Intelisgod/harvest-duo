@@ -25,7 +25,7 @@ ITEM_PITCH = 54                     # row stride
 # rows that fit in the full-height catalogue card (it runs past BAR_Y: the
 # bottom bar only spans the room side)
 VIS = (SCREEN_H - 20 - ITEM_TOP) // ITEM_PITCH
-TAB_COLS = 3                        # catalogue tabs: two rows of three, every label fits
+TAB_COLS = 4                        # catalogue tabs: two rows of four, every label fits
 # the record player is a remote for this PC's Spotify: a new one arrives OFF
 # (switching it on is what starts the music), unlike the lights/appliances
 _ARRIVE_OFF = {"record_player"}

@@ -71,6 +71,18 @@ TIPS = [
     ("Cosy Evenings", "Sit together on the sofa or at the table for a cosy "
      "moment once a day - it restores energy for both of you."),
 ]
+# pampering pieces: kind -> (verb, energy once a day, buff kind, seconds,
+# amount, buff label, toast title, toast body, toast colour)
+_PAMPER = {
+    "coffee_machine": ("brews a fresh espresso", 16, "speed", 240, 0.15,
+                       "Caffeinated", "Espresso time!",
+                       "{name} feels zippy - walking faster for a while.",
+                       (214, 170, 120)),
+    "bathtub": ("sinks into a bubble bath", 30, "regen", 300, 0.25,
+                "Fresh & Cosy", "Bubble bath",
+                "{name} comes out warm, pink and very relaxed.",
+                (190, 220, 246)),
+}
 # a few little piano tunes (note names from audio.NOTE)
 _TUNES = [("C4", "E4", "G4", "C5", "G4", "E4", "C4"),
           ("E4", "D4", "C4", "D4", "E4", "E4", "E4"),
@@ -211,6 +223,43 @@ class HomeMixin:
             except Exception:
                 pass
 
+    # ------------------------------------------------------------ pampering
+    def _home_pamper(self, p, fr):
+        """Coffee station / bubble bath: the piece runs for a moment (steam,
+        bubbles), the farmer gets a real buff, and the energy boost counts
+        once per farmer per day (the buff can be topped up any time)."""
+        kind = fr.kind
+        verb, energy, buff, secs, amt, label, title, body, col = _PAMPER[kind]
+        fr.on = True
+        self._home_pamper_t = getattr(self, "_home_pamper_t", {})
+        self._home_pamper_t[id(fr)] = 6.0                   # switches itself off
+        t = self.time
+        today = f"{t.year}-{t.season}-{t.day}"
+        done = fr.data.setdefault("used", {})
+        who = str(self._pidx_of(p))
+        fresh = done.get(who) != today
+        done[who] = today
+        if fresh:
+            p.energy = min(MAX_ENERGY, p.energy + energy)
+        if hasattr(p, "add_buff"):
+            p.add_buff(buff, secs, amt, label)
+        self._home_sfx("ui_toggle", "ui_toggle")
+        gain = f" (+{energy} energy)" if fresh else ""
+        self._home_seat_say(p, f"{p.name} {verb}{gain} - {label}!")
+        self._home_toast(title, body.format(name=p.name), color=col)
+
+    def _on_update_home_pamper(self, dt):
+        tm = getattr(self, "_home_pamper_t", None)
+        if not tm:
+            return
+        for q in self.world.home_furniture:
+            k = id(q)
+            if k in tm:
+                tm[k] -= dt
+                if tm[k] <= 0:
+                    q.on = False
+                    del tm[k]
+
     # ------------------------------------------------------------ interact
     def _home_interact(self, p, fr):
         """Called first by interact_furniture. True = handled here."""
@@ -221,6 +270,9 @@ class HomeMixin:
         remote = getattr(self, "net_mode", None) == "host" and idx == 1
         show = getattr(self, "_show_interact", None)      # ShowpieceMixin: easel, paintings,
         if show and show(idx, p, fr, remote):             # telescope, arcade cabinet
+            return True
+        if kind in _PAMPER:
+            self._home_pamper(p, fr)
             return True
         if kind == "fridge" and not remote:
             self._open_fridge(idx, fr)
