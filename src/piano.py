@@ -140,12 +140,13 @@ def pitch_color(midi):
     return _PC_COL[midi % 12]
 
 
-def _song(sid, tab, title, beat, text):
+def _song(sid, tab, title, beat, text, stars=1, shelf="Nursery"):
     notes = []
     for tok in text.split():
         nm, _, b = tok.partition(":")
         notes.append((midi_of(nm), float(b) if b else 1.0))
-    return {"id": sid, "tab": tab, "title": title, "beat": beat, "notes": notes}
+    return {"id": sid, "tab": tab, "title": title, "beat": beat, "notes": notes,
+            "stars": stars, "shelf": shelf}
 
 
 # public-domain melodies (beats: 1 = quarter note)
@@ -164,7 +165,94 @@ SONGS = [
     _song("birthday", "Happy Birthday", "Happy Birthday to You", 0.46,
           "G3:0.75 G3:0.25 A3 G3 C4 B3:2 G3:0.75 G3:0.25 A3 G3 D4 C4:2 "
           "G3:0.75 G3:0.25 G4 E4 C4 B3 A3:2 F4:0.75 F4:0.25 E4 C4 D4 C4:3"),
+    # ---- 2026-09-28 song book expansion (all public domain) ----
+    _song("frere", "Frere Jacques", "Frere Jacques", 0.40,
+          "C4 D4 E4 C4 C4 D4 E4 C4 E4 F4 G4:2 E4 F4 G4:2 "
+          "G4:0.5 A4:0.5 G4:0.5 F4:0.5 E4 C4 G4:0.5 A4:0.5 G4:0.5 F4:0.5 E4 C4 "
+          "C4 G3 C4:2 C4 G3 C4:2"),
+    _song("rowboat", "Row Your Boat", "Row, Row, Row Your Boat", 0.34,
+          "C4:1.5 C4:1.5 C4 D4:0.5 E4:1.5 E4 D4:0.5 E4 F4:0.5 G4:3 "
+          "C5:0.5 C5:0.5 C5:0.5 G4:0.5 G4:0.5 G4:0.5 E4:0.5 E4:0.5 E4:0.5 "
+          "C4:0.5 C4:0.5 C4:0.5 G4 F4:0.5 E4 D4:0.5 C4:3"),
+    _song("london", "London Bridge", "London Bridge Is Falling Down", 0.40,
+          "G4:1.5 A4:0.5 G4 F4 E4 F4 G4:2 D4 E4 F4:2 E4 F4 G4:2 "
+          "G4:1.5 A4:0.5 G4 F4 E4 F4 G4:2 D4:2 G4:2 E4 C4:2"),
+    _song("macdonald", "Old MacDonald", "Old MacDonald Had a Farm", 0.36,
+          "C4 C4 C4 G3 A3 A3 G3:2 E4 E4 D4 D4 C4:3 G3 "
+          "C4 C4 C4 G3 A3 A3 G3:2 E4 E4 D4 D4 C4:3"),
+    _song("susanna", "Oh Susanna", "Oh! Susanna", 0.34,
+          "C4:0.5 D4:0.5 E4 G4 G4:1.5 A4:0.5 G4 E4 C4:1.5 D4:0.5 E4 E4 D4 C4 D4:3 "
+          "C4:0.5 D4:0.5 E4 G4 G4:1.5 A4:0.5 G4 E4 C4:1.5 D4:0.5 E4 E4 D4 D4 C4:3",
+          stars=2, shelf="Folk"),
+    _song("jingle", "Jingle Bells", "Jingle Bells", 0.30,
+          "E4 E4 E4:2 E4 E4 E4:2 E4 G4 C4:1.5 D4:0.5 E4:4 "
+          "F4 F4 F4:1.5 F4:0.5 F4 E4 E4 E4:0.5 E4:0.5 E4 D4 D4 E4 D4:2 G4:2 "
+          "E4 E4 E4:2 E4 E4 E4:2 E4 G4 C4:1.5 D4:0.5 E4:4 "
+          "F4 F4 F4:1.5 F4:0.5 F4 E4 E4 E4:0.5 E4:0.5 G4 G4 F4 D4 C4:4",
+          stars=2, shelf="Holiday"),
+    _song("merryxmas", "Merry Christmas", "We Wish You a Merry Christmas", 0.34,
+          "G3 C4 C4:0.5 D4:0.5 C4:0.5 B3:0.5 A3 A3 A3 D4 D4:0.5 E4:0.5 D4:0.5 C4:0.5 "
+          "B3 G3 G3 E4 E4:0.5 F4:0.5 E4:0.5 D4:0.5 C4 A3 G3:0.5 G3:0.5 A3 D4 B3 C4:2",
+          stars=2, shelf="Holiday"),
+    _song("auldlang", "Auld Lang Syne", "Auld Lang Syne", 0.44,
+          "G3 C4:1.5 C4:0.5 C4 E4 D4:1.5 C4:0.5 D4 E4 C4:1.5 C4:0.5 E4 G4 A4:3 "
+          "A4 G4:1.5 E4:0.5 E4 C4 D4:1.5 C4:0.5 D4 E4 C4:1.5 A3:0.5 A3 G3 C4:3",
+          stars=2, shelf="Holiday"),
+    _song("lullaby", "Brahms' Lullaby", "Brahms' Lullaby", 0.40,
+          "E4:0.5 E4:0.5 G4:2 E4:0.5 E4:0.5 G4:2 E4:0.5 G4:0.5 C5 B4:1.5 A4:0.5 A4 G4 "
+          "D4:0.5 E4:0.5 F4 D4 D4:0.5 E4:0.5 F4:2 D4:0.5 F4:0.5 B4:0.5 A4:0.5 G4 B4 C5:3 "
+          "C4:0.5 C4:0.5 C5:2 A4:0.5 F4:0.5 G4:2 E4:0.5 C4:0.5 F4 G4 A4 G4:2 "
+          "C4:0.5 C4:0.5 C5:2 A4:0.5 F4:0.5 G4:2 E4:0.5 C4:0.5 F4 E4 D4 C4:3",
+          stars=2, shelf="Classics"),
+    _song("amazing", "Amazing Grace", "Amazing Grace", 0.40,
+          "G3 C4:2 E4:0.5 C4:0.5 E4:2 D4 C4:2 A3 G3:2 G3 C4:2 E4:0.5 C4:0.5 E4:2 D4 G4:3 "
+          "E4:0.5 G4:0.5 G4:2 E4:0.5 G4:0.5 E4:2 D4 C4:2 A3 G3:2 G3 "
+          "C4:2 E4:0.5 C4:0.5 E4:2 D4 C4:3",
+          stars=2, shelf="Folk"),
+    _song("aura", "Aura Lee", "Aura Lee (the Love Me Tender tune)", 0.46,
+          "G3 C4 B3 C4 D4 A3 D4:2 C4 B3 A3 B3 C4:4 "
+          "G3 C4 B3 C4 D4 A3 D4:2 C4 B3 A3 B3 C4:4 "
+          "E4 E4 E4 E4 E4 E4 E4:2 E4 D4 C4 D4 E4:4 "
+          "E4 E4 F4 E4 D4 A3 D4:2 C4 B3 E4 D4 C4:4",
+          stars=2, shelf="Love songs"),
+    _song("bridal", "Bridal Chorus", "Bridal Chorus (Here Comes the Bride)", 0.44,
+          "G3 C4:1.5 C4:0.5 C4:2 G3 D4:1.5 B3:0.5 C4:2 "
+          "G3 C4:1.5 F4:0.5 F4:1.5 E4:0.5 D4:1.5 C4:0.5 B3:1.5 C4:0.5 D4:2 "
+          "G3 C4:1.5 C4:0.5 C4:2 G3 D4:1.5 B3:0.5 C4:2 "
+          "G3 C4:1.5 E4:0.5 G4:1.5 E4:0.5 C4:1.5 G3:0.5 A3:1.5 B3:0.5 C4:4",
+          stars=2, shelf="Love songs"),
+    _song("greensleeves", "Greensleeves", "Greensleeves", 0.30,
+          "A3 C4:2 D4 E4:1.5 F4:0.5 E4 D4:2 B3 G3:1.5 A3:0.5 B3 "
+          "C4:2 A3 A3:1.5 G#3:0.5 A3 B3:2 G#3 E3:2 A3 "
+          "C4:2 D4 E4:1.5 F4:0.5 E4 D4:2 B3 G3:1.5 A3:0.5 B3 "
+          "C4:1.5 B3:0.5 A3 G#3:1.5 F#3:0.5 G#3 A3:3",
+          stars=3, shelf="Classics"),
+    _song("minuet", "Minuet in G", "Minuet in G (Petzold)", 0.34,
+          "D4 G3:0.5 A3:0.5 B3:0.5 C4:0.5 D4 G3 G3 E4 C4:0.5 D4:0.5 E4:0.5 F#4:0.5 G4 G3 G3 "
+          "C4 D4:0.5 C4:0.5 B3:0.5 A3:0.5 B3 C4:0.5 B3:0.5 A3:0.5 G3:0.5 "
+          "F#3 G3:0.5 A3:0.5 B3:0.5 G3:0.5 A3:3 "
+          "D4 G3:0.5 A3:0.5 B3:0.5 C4:0.5 D4 G3 G3 E4 C4:0.5 D4:0.5 E4:0.5 F#4:0.5 G4 G3 G3 "
+          "C4 D4:0.5 C4:0.5 B3:0.5 A3:0.5 B3 C4:0.5 B3:0.5 A3:0.5 G3:0.5 "
+          "A3 B3:0.5 A3:0.5 G3:0.5 F#3:0.5 G3:3",
+          stars=3, shelf="Classics"),
+    _song("elise", "Fur Elise", "Fur Elise (Beethoven)", 0.30,
+          "E5:0.5 D#5:0.5 E5:0.5 D#5:0.5 E5:0.5 B4:0.5 D5:0.5 C5:0.5 A4:1.5 "
+          "C4:0.5 E4:0.5 A4:0.5 B4:1.5 E4:0.5 G#4:0.5 B4:0.5 C5:1.5 "
+          "E4:0.5 E5:0.5 D#5:0.5 E5:0.5 D#5:0.5 E5:0.5 B4:0.5 D5:0.5 C5:0.5 A4:1.5 "
+          "C4:0.5 E4:0.5 A4:0.5 B4:1.5 E4:0.5 C5:0.5 B4:0.5 A4:3",
+          stars=3, shelf="Classics"),
+    _song("canon", "Canon in D", "Canon in D (Pachelbel)", 0.40,
+          "F#4:2 E4:2 D4:2 C#4:2 B3:2 A3:2 B3:2 C#4:2 "
+          "D4:2 C#4:2 B3:2 A3:2 G3:2 F#3:2 G3:2 E3:2 "
+          "D4:0.5 F#4:0.5 A4:0.5 G4:0.5 F#4:0.5 D4:0.5 F#4:0.5 E4:0.5 "
+          "D4:0.5 B3:0.5 D4:0.5 A4:0.5 G4:0.5 B4:0.5 A4:0.5 G4:0.5 "
+          "F#4:2 E4:2 D4:4",
+          stars=3, shelf="Love songs"),
 ]
+for _s0 in SONGS[:4]:                    # the original four: first steps
+    _s0["stars"] = 2 if _s0["id"] == "birthday" else 1
+    _s0["shelf"] = "Nursery" if _s0["id"] != "ode" else "Classics"
+SHELVES = ["Nursery", "Folk", "Holiday", "Love songs", "Classics"]
 SONG_IDS = {s["id"]: s for s in SONGS}
 
 
@@ -937,15 +1025,19 @@ KEY_RECTS = _key_rects()
 
 
 def _tab_rects():
-    labels = ["Free play"] + [s["tab"] for s in SONGS]
-    widths = [K.font(15, True).size(t)[0] + 36 for t in labels]
-    gap = 10
-    x = SCREEN_W // 2 - (sum(widths) + gap * (len(widths) - 1)) // 2
-    out = []
-    for w in widths:
-        out.append(pygame.Rect(x, 156, w, 28))
-        x += w + gap
+    """Top bar: two tabs (Free play | Song book) on the left, the song
+    picker (< title >) in the middle and the 'All songs' button right."""
+    labels = ["Free play", "Song book"]
+    out = [pygame.Rect(96, 156, 128, 28), pygame.Rect(232, 156, 128, 28)]
     return labels, out
+
+
+PICK_L = pygame.Rect(400, 156, 30, 28)          # previous song
+PICK = pygame.Rect(436, 154, 408, 32)           # the song on the stand
+PICK_R = pygame.Rect(850, 156, 30, 28)          # next song
+ALL_BTN = pygame.Rect(1004, 156, 180, 28)       # the song list
+BOOK = pygame.Rect(128, 196, 1024, 420)         # the open song list
+BOOK_COLS = 3
 
 
 OCT_L = pygame.Rect(NAME.right - 196, NAME.y + 5, 26, 22)
@@ -969,6 +1061,8 @@ class PianoScreen:
         self.syn = synth(game.audio)
         self.base = BASE_DEFAULT
         self.mode = 0                   # 0 free play, 1.. = SONGS[mode - 1]
+        self.last_song = 1              # the page the song book opens on
+        self.book = None                # open song list: {"sel": index, "t": age}
         self.src = {}                   # input source -> the midi it holds down
         self._keys = set()              # computer keys down (to ignore key repeat)
         self.held = {}                  # midi -> how many sources hold it
@@ -1155,6 +1249,8 @@ class PianoScreen:
         self._stop_demo()
         self._stop_roll()                               # a new page mid-flourish: let go
         self.mode = mode
+        if mode:
+            self.last_song = mode
         self.song_i, self.scroll, self.done_t, self.reward = 0, 0.0, 0.0, ""
         if mode and self.base != BASE_DEFAULT:
             self.base = BASE_DEFAULT                    # every song sits on these keys
@@ -1162,6 +1258,60 @@ class PianoScreen:
         self._set_msg()
         if mode:
             self._prewarm([m for m, _b in self.song["notes"]])
+
+    def played(self, sid):
+        """Has anyone finished this song before (any day, either farmer)?"""
+        done = getattr(self.g, "_piano_songs", {}) or {}
+        return any(k.endswith(":" + sid) for k in done)
+
+    def step_song(self, d):
+        """Up / Down and the < > arrows: the previous / next page of the book
+        (page 0 is free play, so it cycles through it like the old tabs)."""
+        self.set_mode(self.mode + d)                    # free play is page 0
+
+    def open_book(self):
+        self._stop_demo()
+        self.book = {"sel": (self.mode or self.last_song) - 1, "t": 0.0}
+        self.g.audio.play("page" if "page" in getattr(self.g.audio, "sfx", {}) else "ui_move")
+
+    def close_book(self, pick=None):
+        self.book = None
+        if pick is not None:
+            self.set_mode(pick + 1)
+            self.g.audio.play("ui_select")
+
+    def _book_cells(self):
+        """(song index, rect) for every card in the open song list."""
+        rows = (len(SONGS) + BOOK_COLS - 1) // BOOK_COLS
+        gap = 10
+        top = BOOK.y + 58
+        cw = (BOOK.w - 48 - gap * (BOOK_COLS - 1)) // BOOK_COLS
+        ch = min(52, (BOOK.bottom - 20 - top - gap * (rows - 1)) // rows)
+        out = []
+        for i in range(len(SONGS)):
+            c, r = i % BOOK_COLS, i // BOOK_COLS
+            out.append((i, pygame.Rect(BOOK.x + 24 + c * (cw + gap), top + r * (ch + gap),
+                                       cw, ch)))
+        return out
+
+    def _book_key(self, k):
+        n = len(SONGS)
+        sel = self.book["sel"]
+        if k in (pygame.K_ESCAPE, pygame.K_BACKSPACE, pygame.K_TAB):
+            self.close_book()
+        elif k in (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE):
+            self.close_book(sel)
+        elif k == pygame.K_LEFT:
+            self.book["sel"] = (sel - 1) % n
+        elif k == pygame.K_RIGHT:
+            self.book["sel"] = (sel + 1) % n
+        elif k == pygame.K_UP:
+            self.book["sel"] = (sel - BOOK_COLS) % n
+        elif k == pygame.K_DOWN:
+            self.book["sel"] = min(n - 1, sel + BOOK_COLS) if sel + BOOK_COLS < n else sel % BOOK_COLS
+        else:
+            return
+        self.g.audio.play("ui_move")
 
     def _song_check(self, midi):
         want = self.target()
@@ -1271,14 +1421,21 @@ class PianoScreen:
         if k in self._keys:
             return                                      # key repeat: a piano doesn't
         self._keys.add(k)
+        if self.book is not None:
+            self._book_key(k)                           # the song list has the keys
+            return
         if k in (pygame.K_ESCAPE, pygame.K_BACKSPACE):
             self.close()
         elif k == pygame.K_TAB:
-            back = bool(getattr(e, "mod", 0) & pygame.KMOD_SHIFT)
-            self.set_mode(self.mode + (-1 if back else 1))
+            # Free play <-> the song book (it opens on the last page played);
+            # Shift+Tab (or the button) opens the list of every song
+            if getattr(e, "mod", 0) & pygame.KMOD_SHIFT:
+                self.open_book()
+                return
+            self.set_mode(0 if self.mode else self.last_song)
             self.g.audio.play("page" if "page" in getattr(self.g.audio, "sfx", {}) else "ui_move")
         elif k in (pygame.K_UP, pygame.K_DOWN):
-            self.set_mode(self.mode + (-1 if k == pygame.K_UP else 1))
+            self.step_song(-1 if k == pygame.K_UP else 1)
             self.g.audio.play("page" if "page" in getattr(self.g.audio, "sfx", {}) else "ui_move")
         elif k in (pygame.K_LEFT, pygame.K_RIGHT):
             self._shift_octave(-1 if k == pygame.K_LEFT else 1)
@@ -1292,13 +1449,32 @@ class PianoScreen:
                 self.press(m, ("k", k))
 
     def _click(self, pos):
+        if self.book is not None:
+            for i, r in self._book_cells():
+                if r.collidepoint(pos):
+                    self.close_book(i)
+                    return
+            if not BOOK.collidepoint(pos):
+                self.close_book()                       # clicked outside: put it away
+            return
         labels, rects = self._tabs
         for i, r in enumerate(rects):
             if r.collidepoint(pos):
-                if i != self.mode:
-                    self.set_mode(i)
+                want = self.last_song if i else 0
+                if want != self.mode:
+                    self.set_mode(want)
                     self.g.audio.play("ui_move")
                 return
+        if ALL_BTN.collidepoint(pos):
+            self.open_book()
+            return
+        if PICK.collidepoint(pos):
+            self.open_book()
+            return
+        if PICK_L.collidepoint(pos) or PICK_R.collidepoint(pos):
+            self.step_song(-1 if PICK_L.collidepoint(pos) else 1)
+            self.g.audio.play("ui_move")
+            return
         if OCT_L.collidepoint(pos) or OCT_R.collidepoint(pos):
             self._shift_octave(-1 if OCT_L.collidepoint(pos) else 1)
             return
@@ -1345,6 +1521,8 @@ class PianoScreen:
             f[4] -= dt
         self.fx = [f for f in self.fx if f[4] > 0][-160:]
         self.miss_t = max(0.0, self.miss_t - dt)
+        if self.book is not None:
+            self.book["t"] += dt
         self.oct_pop = max(0.0, self.oct_pop - dt * 3)
         self._update_demo(dt)
         for r in self.roll:
@@ -1360,7 +1538,7 @@ class PianoScreen:
             self.done_t -= dt
             if self.done_t <= 0:
                 self.done_t, self.song_i, self.scroll, self.reward = 0.0, 0, 0.0, ""
-                self.msg = f"Play {self.song['title']} again, or Tab for the next song."
+                self.msg = f"Play {self.song['title']} again, or Down for the next song."
         view = self.demo["i"] - 1 if self.demo else self.song_i
         self.scroll += (max(0, view) - self.scroll) * min(1.0, dt * 10)
 
@@ -1400,6 +1578,8 @@ class PianoScreen:
         self._draw_keys(surf)
         self._draw_fallboard(surf, color)
         self._draw_fx(surf)
+        if self.book is not None:
+            self._draw_book(surf)
         f = K.fit_font(self.msg, P.w - 80, (15, 14, 13, 12), bold=True)
         K.blit_text(surf, f, self.msg, K.GOLD_TXT if self.done_t > 0 else K.INK_SOFT,
                     (P.centerx, 630))
@@ -1417,7 +1597,82 @@ class PianoScreen:
 
     def _draw_tabs(self, surf):
         labels, rects = self._tabs
-        K.tabs(surf, rects, labels, self.mode, fnt_sizes=(15, 14, 13, 12), t=self.clock)
+        K.tabs(surf, rects, labels, 1 if self.mode else 0, fnt_sizes=(15, 14, 13, 12),
+               t=self.clock)
+        # the song on the stand: < title  n/N  stars >
+        s = SONGS[(self.mode or self.last_song) - 1]
+        live = bool(self.mode)
+        for r, ch in ((PICK_L, "<"), (PICK_R, ">")):
+            pygame.draw.rect(surf, K.WOOD_DK, r, border_radius=7)
+            pygame.draw.rect(surf, K.CREAM, r.inflate(-4, -4), border_radius=6)
+            K.blit_text(surf, K.font(16, True), ch, K.INK, r.center)
+        well = PICK
+        pygame.draw.rect(surf, (222, 200, 166) if live else (236, 222, 196), well, border_radius=9)
+        pygame.draw.rect(surf, K.WOOD_DK if live else K.WELL_LINE, well, 2, border_radius=9)
+        idx = f"{(self.mode or self.last_song)}/{len(SONGS)}"
+        fi = K.font(12, True)
+        K.blit_text(surf, fi, idx, K.INK_SOFT, (well.x + 12, well.centery), align="left")
+        self._stars(surf, well.right - 14, well.centery, s["stars"], right=True)
+        room = well.w - 170
+        ft = K.fit_font(s["title"], room, (16, 15, 14, 13), bold=True)
+        tr = K.blit_text(surf, ft, K.ellipsize(ft, s["title"], room),
+                         K.INK if live else K.INK_SOFT, (well.centerx - 6, well.centery))
+        if self.played(s["id"]):                        # a little green tick: played
+            x, y = tr.right + 10, well.centery
+            pygame.draw.lines(surf, K.SPROUT, False, [(x, y), (x + 4, y + 4), (x + 11, y - 5)], 3)
+        K.button(surf, ALL_BTN, "All songs  (Shift+Tab)", self.book is not None,
+                 K.font(13, True))
+
+    def _stars(self, surf, x, y, n, right=False, size=5):
+        """n of 3 little difficulty stars ending (right=True) or starting at x."""
+        xs = [x - (2 - i) * (size * 2 + 3) if right else x + i * (size * 2 + 3)
+              for i in range(3)]
+        for i, cx in enumerate(xs):
+            pts = []
+            for j in range(10):
+                a = -math.pi / 2 + j * math.pi / 5
+                r = size if j % 2 == 0 else size * 0.45
+                pts.append((cx + math.cos(a) * r, y + math.sin(a) * r))
+            col = (236, 176, 60) if i < n else (214, 200, 176)
+            pygame.draw.polygon(surf, col, pts)
+            pygame.draw.polygon(surf, (150, 104, 40) if i < n else (190, 174, 150), pts, 1)
+
+    def _draw_book(self, surf):
+        """The song list: a parchment page over the piano, songs as cards
+        (title, shelf, difficulty stars, a tick once played)."""
+        k = min(1.0, self.book["t"] / 0.14)
+        shade = pygame.Surface(surf.get_size(), pygame.SRCALPHA)
+        shade.fill((30, 18, 24, int(120 * k)))
+        surf.blit(shade, (0, 0))
+        r = BOOK.move(0, int((1 - k) * 18))
+        K.draw_card(surf, r, radius=14)
+        K.ribbon(surf, K.font(20, True), "Song Book", (r.centerx, r.y + 4))
+        K.blit_text(surf, K.font(13, True),
+                    f"{len(SONGS)} songs  -  arrows choose, Enter plays, Esc closes",
+                    K.INK_SOFT, (r.centerx, r.y + 40))
+        dy = r.y - BOOK.y
+        fa, fb = K.font(15, True), K.font(12, True)
+        for i, cell in self._book_cells():
+            c = cell.move(0, dy)
+            s = SONGS[i]
+            sel = i == self.book["sel"]
+            cur = i + 1 == self.mode
+            if sel:
+                K.row_cursor(surf, c, self.clock)
+            else:
+                K.well(surf, c)
+            num = pygame.Rect(c.x + 8, c.centery - 12, 24, 24)
+            pygame.draw.rect(surf, K.WOOD_DK if cur else (222, 200, 166), num, border_radius=7)
+            K.blit_text(surf, fb, str(i + 1), K.CREAM if cur else K.INK, num.center)
+            tx = num.right + 10
+            room = c.right - 70 - tx
+            K.blit_text(surf, fa, K.ellipsize(fa, s["tab"], room), K.INK, (tx, c.y + 17),
+                        align="left")
+            K.blit_text(surf, fb, s["shelf"], K.INK_SOFT, (tx, c.y + 35), align="left")
+            self._stars(surf, c.right - 14, c.y + 17, s["stars"], right=True, size=5)
+            if self.played(s["id"]):
+                K.blit_text(surf, fb, "played", K.SPROUT, (c.right - 12, c.y + 35),
+                            align="right")
 
     def _draw_case(self, surf, c):
         lt, dk, dk2 = _lt(c, 1.1), _dk(c, 0.8), _dk(c, 0.55)
@@ -1829,8 +2084,10 @@ class PianoScreen:
 
     def hint_pills(self):
         """The key hints along the bottom (they follow the Listen button)."""
+        if self.book is not None:
+            return [("Arrows", "Choose"), ("Enter", "Play it"), ("Esc", "Close list")]
         pills = [("Z-M  Q-P", "Play"), ("← →", "Octave"), ("Space", "Pedal"),
-                 ("Tab", "Songs")]
+                 ("Tab", "Song book"), ("↑ ↓", "Songs")]
         if self.song:
             pills.append(("Enter", "Stop" if self.demo else "Listen"))
         pills.append(("Esc", "Stop playing" if self.seated else "Leave"))

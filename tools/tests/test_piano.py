@@ -14,8 +14,8 @@ def run(g, check, H):
     area0 = g.world.current
     added = []
 
-    def key(k, up=False, scancode=0):
-        g._run_state("event", ev(pygame.KEYUP if up else pygame.KEYDOWN, key=k, mod=0,
+    def key(k, up=False, scancode=0, mod=0):
+        g._run_state("event", ev(pygame.KEYUP if up else pygame.KEYDOWN, key=k, mod=mod,
                                  unicode="", scancode=scancode))
 
     def tap(k, frames=1):
@@ -143,8 +143,9 @@ def run(g, check, H):
         assert ui.done_t == 0 and ui.song_i == 0
         # the same song again today: lovely, but no more energy
         assert g._piano_reward(0, "twinkle") == "" and p.energy == min(MAX_ENERGY, 50 + PS.SONG_REWARD)
-        # listen first: the piano plays the melody itself
-        tap(pygame.K_TAB)
+        # listen first: the piano plays the melody itself (Down = next song)
+        tap(pygame.K_DOWN)
+        assert ui.mode == 2, ui.mode
         tap(pygame.K_RETURN)
         assert ui.demo is not None
         for _ in range(75):
@@ -152,12 +153,55 @@ def run(g, check, H):
         assert ui.demo["i"] >= 2, ui.demo
         tap(pygame.K_z)                                   # playing yourself stops the demo
         assert ui.demo is None and ui.song_i == 0
-        tap(pygame.K_TAB)
-        tap(pygame.K_TAB)
+        tap(pygame.K_TAB)                                 # book -> free play
+        assert ui.mode == 0, ui.mode
+        tap(pygame.K_TAB)                                 # ... and back to the same page
+        assert ui.mode == 2, ui.mode
         tap(pygame.K_TAB)
         assert ui.mode == 0, ui.mode
         return f"twinkle: {n} notes"
     check("piano: song book (play one through, listen)", song_book)
+
+    def song_list():
+        """The Song Book list: 20 songs, every one playable to the end (right
+        notes only), keyboard + mouse picking, never stuck open."""
+        ui = g.piano_ui
+        assert len(PN.SONGS) >= 20 and len(PN.SONG_IDS) == len(PN.SONGS)
+        for s0 in PN.SONGS:
+            assert s0["notes"] and 1 <= s0["stars"] <= 3 and s0["shelf"] in PN.SHELVES, s0["id"]
+            assert all(PN.LOW_MIDI <= m <= PN.HIGH_MIDI for m, _b in s0["notes"]), s0["id"]
+        ui.set_mode(0)
+        key(pygame.K_TAB, mod=pygame.KMOD_SHIFT)
+        key(pygame.K_TAB, up=True)
+        assert ui.book is not None, "Shift+Tab should open the list"
+        g.draw()
+        H.shot(g, "piano_song_list")
+        for _ in range(4):
+            tap(pygame.K_RIGHT)
+        tap(pygame.K_DOWN)
+        want = ui.book["sel"]
+        tap(pygame.K_RETURN)
+        assert ui.book is None and ui.mode == want + 1, (ui.mode, want)
+        ui.open_book()
+        cells = dict(ui._book_cells())
+        ui.handle_event(pygame.event.Event(pygame.MOUSEBUTTONDOWN, pos=cells[19].center, button=1))
+        assert ui.book is None and ui.song["id"] == PN.SONGS[19]["id"]
+        ui.open_book()
+        tap(pygame.K_ESCAPE)                              # Esc closes the list, not the piano
+        assert ui.book is None and g.state == "piano"
+        played = 0
+        for i in range(len(PN.SONGS)):
+            ui.set_mode(i + 1)
+            n = 0
+            while ui.target() is not None and n < 400:
+                tap(ui.key_for(ui.shown(ui.target())))
+                n += 1
+            assert ui.done_t > 0 and n == len(ui.song["notes"]), (ui.song["id"], n)
+            played += 1
+            ui.done_t = 0.0
+        g.draw()
+        return f"{played} songs played through"
+    check("piano: the song list (20 songs, pick + play each)", song_list)
 
     def roll_cut_short():
         """A new page / Listen / Esc while the finished-song chord is still
