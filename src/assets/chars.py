@@ -109,7 +109,9 @@ def _draw_farmer(direction, step, skin, style, hair, shirt, arms=True):
     pygame.draw.rect(s, shirt, (cx - 11, 21 + top, 22, 18), border_radius=6)
     pygame.draw.rect(s, dk, (cx - 11, 34 + top, 22, 5), border_radius=4)
     # arms swing opposite legs + hands (omitted for players, who grip the tool)
-    if arms:
+    if arms == "umbrella":
+        _umbrella_arms(s, direction, step, skin, shirt, cx, top)
+    elif arms:
         ax = 3 if step == 1 else (-3 if step == 3 else 0)
         pygame.draw.rect(s, shirt, (cx - 14, 23 + top - ax, 5, 12), border_radius=3)
         pygame.draw.rect(s, shirt, (cx + 9, 23 + top + ax, 5, 12), border_radius=3)
@@ -122,6 +124,39 @@ def _draw_farmer(direction, step, skin, style, hair, shirt, arms=True):
     _hair(s, style, hair, skin, direction, cx, hy)
     _face(s, direction, skin, cx, hy)   # on top of hair/face boundary
     return s
+
+
+# where the umbrella hand grips the shaft, per facing (frame px, before the
+# walk bob). 'up' holds it in front of the chest -- hidden behind the body.
+UMBRELLA_HAND = {"down": (TILE // 2 + 13, 24), "up": (TILE // 2 + 4, 22),
+                 "left": (TILE // 2 - 15, 26), "right": (TILE // 2 + 15, 26)}
+
+
+def _umbrella_arms(s, direction, step, skin, shirt, cx, top):
+    """Arms for a villager walking in the rain: one arm swings as usual, the
+    other is bent up with the hand GRIPPING the umbrella shaft (the shaft and
+    canopy themselves are drawn by the NPC so they can sway with the walk)."""
+    ax = 3 if step == 1 else (-3 if step == 3 else 0)
+    hx, hy = UMBRELLA_HAND[direction]
+    hy += top - 4
+    if direction in ("down", "up"):
+        pygame.draw.rect(s, shirt, (cx - 14, 23 + top - ax, 5, 12), border_radius=3)
+        pygame.draw.circle(s, skin, (cx - 11, 35 + top - ax), 3)
+        if direction == "down":           # elbow down at the side, forearm up
+            pygame.draw.line(s, shirt, (cx + 11, 24 + top), (cx + 12, 30 + top), 5)
+            pygame.draw.line(s, shirt, (cx + 12, 30 + top), (hx, hy + 2), 4)
+            pygame.draw.circle(s, skin, (hx, hy), 3)
+        else:                             # from behind: just the raised sleeve
+            pygame.draw.rect(s, shirt, (cx + 9, 23 + top, 5, 8), border_radius=3)
+    else:
+        f = -1 if direction == "left" else 1
+        back_x = cx + 9 if f < 0 else cx - 14
+        pygame.draw.rect(s, shirt, (back_x, 23 + top + ax, 5, 12), border_radius=3)
+        pygame.draw.circle(s, skin, (back_x + 2, 35 + top + ax), 3)
+        sh = (cx + f * 7, 25 + top)       # front shoulder -> hand held out front
+        pygame.draw.line(s, shirt, sh, (cx + f * 9, 31 + top), 5)
+        pygame.draw.line(s, shirt, (cx + f * 9, 31 + top), (hx - f, hy + 2), 4)
+        pygame.draw.circle(s, skin, (hx, hy), 3)
 
 
 def player_frames(skin, style, hair, shirt, arms=True):
@@ -145,96 +180,89 @@ def player_sprite(appearance):
     return frames_for(appearance)["down"][0]
 
 
+def _face_three_quarter(s, skin, cx, hy):
+    """Front 3/4 face turned toward screen-LEFT (an iso sitter facing SW):
+    both eyes show, shifted toward the turn, the far eye a touch narrower,
+    plus the little nose bump on the leading rim (Habbo / Sims-style 3/4)."""
+    eye = (44, 40, 48)
+    mouth = (170, 110, 100)
+    pygame.draw.circle(s, skin, (cx - 11, hy + 3), 1)                   # nose bump
+    for ex, w, inner in ((cx - 7, 2, 0), (cx + 1, 3, 0)):               # far, near eye
+        pygame.draw.rect(s, (250, 250, 250), (ex - 1, hy - 2, w, 5))
+        pygame.draw.rect(s, eye, (ex - 1 + inner, hy - 1, 2, 3))
+        pygame.draw.line(s, eye, (ex - 1, hy - 3), (ex - 2 + w, hy - 3), 1)
+    pygame.draw.arc(s, mouth, (cx - 7, hy + 2, 7, 6), 3.4, 6.0, 1)
+
+
 def _draw_seated(direction, skin, style, hair, shirt):
-    """A Sims-style SITTING pose: lap folded, shins dangling past the seat's
-    front edge, hands resting on the knees. The surface is TALLER than the
-    standing frame so the dangling feet never get clipped off."""
+    """A SITTING upper body for the ISO home, drawn on the room's diagonals so
+    the sitter lines up with the seat (Habbo / Sims / LINE PLAY style):
+
+        grid 'down'  (+y) -> faces SW, 3/4 front      grid 'right' (+x) -> SE (mirror)
+        grid 'left'  (-x) -> faces NW, 3/4 back       grid 'up'    (-y) -> NE (mirror)
+
+    Only torso, arms and head live in the sprite. The LEGS are real 3D boxes
+    built in tile space by homeiso (thighs along the seat, knees over its front
+    edge, shins down to the floor), so they turn with the seat and the chair's
+    own parts occlude them correctly. Hands rest where the thighs land."""
+    if direction in ("right", "up"):
+        base = _draw_seated("down" if direction == "right" else "left",
+                            skin, style, hair, shirt)
+        return pygame.transform.flip(base, True, False)
     s = _surf((TILE, TILE + 10))
     cx = TILE // 2
     dk = tuple(int(c * 0.78) for c in shirt)
-    # legs first (the torso then overlaps the hip joint). Facing AWAY from the
-    # camera ("up"/"left") the legs hang on the FAR side of the seat -- they are
-    # a SEPARATE sprite (seated_leg_frames) drawn behind the seat, so the seat
-    # itself occludes them and only the feet peek out underneath.
-    if direction == "down":
-        pygame.draw.rect(s, PANTS, (cx - 9, 37, 18, 8), border_radius=3)   # lap/thighs
-        pygame.draw.rect(s, PANTS, (cx - 8, 44, 6, 9), border_radius=2)    # shins from
-        pygame.draw.rect(s, PANTS, (cx + 2, 45, 6, 9), border_radius=2)    # the knees
-        pygame.draw.ellipse(s, SHOE, (cx - 9, 50, 8, 5))                   # (1px lower:
-        pygame.draw.ellipse(s, SHOE, (cx + 1, 51, 8, 5))                   #  iso depth)
-    elif direction == "right":
-        # clear Z-shape: hip -> thigh FORWARD -> knee -> shin DOWN -> toe forward
-        pygame.draw.rect(s, PANTS, (cx - 2, 38, 17, 7), border_radius=3)   # thigh
-        pygame.draw.rect(s, PANTS, (cx + 9, 43, 6, 11), border_radius=2)   # shin at knee
-        pygame.draw.ellipse(s, SHOE, (cx + 9, 51, 10, 5))                  # toe forward
-    elif direction == "left":
-        # mirrored Z-shape, drawn IN the body frame (over the seat edge) so the
-        # bent leg always reads connected at chibi scale
-        pygame.draw.rect(s, PANTS, (cx - 15, 38, 17, 7), border_radius=3)  # thigh
-        pygame.draw.rect(s, PANTS, (cx - 15, 43, 6, 11), border_radius=2)  # shin at knee
-        pygame.draw.ellipse(s, SHOE, (cx - 19, 51, 10, 5))                 # toe forward
-    # torso, a touch shorter than standing (slouched onto the cushion)
-    pygame.draw.rect(s, shirt, (cx - 11, 25, 22, 15), border_radius=6)
-    pygame.draw.rect(s, dk, (cx - 11, 35, 22, 5), border_radius=4)
-    # arms resting forward, hands on the knees
-    if direction != "up":
-        pygame.draw.rect(s, shirt, (cx - 14, 27, 5, 10), border_radius=3)
-        pygame.draw.rect(s, shirt, (cx + 9, 27, 5, 10), border_radius=3)
-        pygame.draw.circle(s, skin, (cx - 11, 38), 3)
-        pygame.draw.circle(s, skin, (cx + 12, 38), 3)
+    sd = tuple(int(c * 0.88) for c in shirt)          # the body's turned side
+    front = direction == "down"                       # SW 3/4 front / NW 3/4 back
+    sleeve_w = 5
+    if not front:
+        # far arm (screen-right) peeks past the back, elbow bent forward
+        pygame.draw.line(s, dk, (cx + 9, 28), (cx + 9, 34), sleeve_w)
+    # torso -- a hair narrower than standing, the turned side in shade
+    # (it ends just above the lap so the thighs' top faces show beneath it)
+    pygame.draw.rect(s, shirt, (cx - 10, 25, 20, 12), border_radius=6)
+    if front:
+        pygame.draw.rect(s, sd, (cx + 4, 26, 6, 10), border_radius=4)   # right flank
     else:
-        pygame.draw.rect(s, shirt, (cx - 13, 27, 4, 10), border_radius=3)
-        pygame.draw.rect(s, shirt, (cx + 9, 27, 4, 10), border_radius=3)
-    # neck + head + hair + face (same as standing)
-    pygame.draw.rect(s, skin, (cx - 3, 23, 6, 4))
+        pygame.draw.rect(s, sd, (cx - 10, 26, 6, 10), border_radius=4)  # left flank
+        pygame.draw.line(s, dk, (cx + 1, 27), (cx + 1, 33), 1)          # spine crease
+    pygame.draw.rect(s, dk, (cx - 10, 32, 20, 5), border_radius=4)
+    if front:
+        # both forearms reach FORWARD-left onto the lap: hands on the thighs
+        pygame.draw.line(s, sd, (cx - 9, 28), (cx - 10, 33), sleeve_w)  # far upper arm
+        pygame.draw.line(s, sd, (cx - 10, 33), (cx - 8, 35), sleeve_w - 1)
+        pygame.draw.circle(s, skin, (cx - 8, 36), 3)                    # far hand
+        pygame.draw.line(s, shirt, (cx + 9, 28), (cx + 8, 33), sleeve_w)   # near arm
+        pygame.draw.line(s, shirt, (cx + 8, 33), (cx + 2, 37), sleeve_w - 1)
+        pygame.draw.circle(s, skin, (cx + 1, 38), 3)                    # near hand
+    else:
+        # near arm (screen-left) hangs along the side, hand forward = hidden
+        pygame.draw.line(s, shirt, (cx - 10, 28), (cx - 11, 35), sleeve_w)
+    # neck + head
+    pygame.draw.rect(s, skin, (cx - 4 if front else cx - 2, 22, 6, 4))
     hy = 18
     pygame.draw.circle(s, skin, (cx, hy), 11)
-    _hair(s, style, hair, skin, direction, cx, hy)
-    _face(s, direction, skin, cx, hy)
+    if front:
+        _hair(s, style, hair, skin, "left", cx, hy)       # profile-ish hair mass
+        _face_three_quarter(s, skin, cx, hy)
+    else:
+        _hair(s, style, hair, skin, "up", cx, hy)         # back of the head...
+        if style != "bald":                               # ...+ a sliver of cheek
+            pygame.draw.ellipse(s, skin, (cx - 11, hy + 1, 4, 8))
     return s
 
 
-# y offset (px) of the HIP LINE inside the seated sprite: blit so this row
+# y offset (px) of the SEAT-TOP line inside the seated sprite: blit so this row
 # lands on the seat's cushion top (homeiso uses it to anchor the pose)
 SEATED_HIP_Y = 37
 
 
-def _draw_seated_legs(direction):
-    """Far-side dangling legs for away-facing sitters ('up'/'left'), on the
-    SAME 48x58 canvas as the body frame so both blit at the same anchor. Drawn
-    as a separate part so the seat occludes the shins and only feet peek out."""
-    s = _surf((TILE, TILE + 10))
-    cx = TILE // 2
-    if direction == "up":
-        # knees bend AWAY from camera: only short tucked shins + heels show
-        pygame.draw.rect(s, PANTS, (cx - 8, 40, 6, 10), border_radius=2)   # shins
-        pygame.draw.rect(s, PANTS, (cx + 2, 41, 6, 10), border_radius=2)
-        pygame.draw.ellipse(s, SHOE, (cx - 9, 48, 8, 5))                   # heels
-        pygame.draw.ellipse(s, SHOE, (cx + 1, 49, 8, 5))
-    elif direction == "left":
-        # mirrored Z-shape: thigh forward (left) -> knee -> shin down -> toe
-        pygame.draw.rect(s, PANTS, (cx - 15, 38, 17, 7), border_radius=3)  # thigh
-        pygame.draw.rect(s, PANTS, (cx - 15, 43, 6, 11), border_radius=2)  # shin at knee
-        pygame.draw.ellipse(s, SHOE, (cx - 19, 51, 10, 5))                 # toe forward
-    return s
-
-
 def seated_frames(appearance):
-    """{direction: seated-pose BODY frame} for an appearance dict (cached).
-    'up'/'left' bodies have no legs -- those come from seated_leg_frames()."""
+    """{grid direction: seated upper-body frame} for an appearance dict
+    (cached). The legs are drawn as 3D boxes by homeiso."""
     skin, style, hair, shirt = resolve_appearance(appearance)
     key = ("seated", skin, style, hair, shirt)
     if key not in _cache:
         _cache[key] = {d: _draw_seated(d, skin, style, hair, shirt)
                        for d in ("down", "up", "left", "right")}
-    return _cache[key]
-
-
-def seated_leg_frames():
-    """{direction: far-side legs frame} for away-facing sitters (cached;
-    trousers/shoes are palette colours, so one set serves every player).
-    Only 'up' uses this -- side facings keep their legs in the body frame."""
-    key = ("seated_legs",)
-    if key not in _cache:
-        _cache[key] = {d: _draw_seated_legs(d) for d in ("up",)}
     return _cache[key]

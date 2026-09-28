@@ -369,27 +369,29 @@ def tackle():
 VILLAGER_PROPS = {"Luna": easel, "Kai": anvil, "Fah": cafe_sign, "Somchai": tackle}
 
 
-def umbrella(col):
-    """A little pastel umbrella villagers carry on rainy days (dome + scallops)."""
-    key = ("umb", col)
+def umbrella_canopy(col):
+    """The dome of a villager's rainy-day umbrella (the shaft is drawn by the
+    NPC, from this canopy down to the hand that grips it). Hem at y=20,
+    centred at x=22, with a lit side, ribs and a scalloped edge."""
+    key = ("umb2", col)
     if key in _C:
         return _C[key]
-    w, h = 44, 40
+    w, h = 44, 24
     s = _s(w, h)
     c = _lt(col, 1.15)
     cd = _dk(c, 0.8)
-    cx, cy, r = w // 2, 18, 19
-    pygame.draw.line(s, (90, 70, 60), (cx, cy), (cx, h - 4), 2)          # handle
-    pygame.draw.arc(s, (90, 70, 60), (cx - 6, h - 9, 7, 8), 3.3, 6.2, 2)
+    cx, cy, r = w // 2, 20, 19
     pygame.draw.circle(s, cd, (cx, cy), r, draw_top_left=True, draw_top_right=True)
     pygame.draw.circle(s, c, (cx, cy + 1), r - 2, draw_top_left=True, draw_top_right=True)
+    pygame.draw.circle(s, _lt(c, 1.12), (cx - 5, cy + 1), r - 8,
+                       draw_top_left=True)                                   # lit panel
     for i in range(5):                                                   # scalloped hem
         x = cx - r + 4 + i * ((2 * r - 8) // 4)
         pygame.draw.circle(s, cd, (x, cy), 4, draw_bottom_left=True, draw_bottom_right=True)
     for dx in (-10, 0, 10):                                              # ribs
         pygame.draw.line(s, cd, (cx, cy - r + 2), (cx + dx, cy), 1)
     pygame.draw.circle(s, (255, 255, 255), (cx - 8, cy - 9), 2)
-    pygame.draw.circle(s, (90, 70, 60), (cx, cy - r), 2)
+    pygame.draw.line(s, (90, 70, 60), (cx, cy - r - 2), (cx, cy - r + 1), 2)   # tip
     _C[key] = s
     return s
 

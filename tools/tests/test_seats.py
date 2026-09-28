@@ -144,8 +144,6 @@ def run(g, check, H):
                     ops = homeiso._sitter_ops(scr, 0, 0, P, 6.5, 5.5, 16, kind)
                     roles = {getattr(fn, "role", "?"): b for b, fn in ops}
                     b = roles["body"]
-                    if kind == "chair" and (fx, fy) == (-1, 0):
-                        continue                     # side-facing chair: lifted box
                     back = {(0, 1): 5.5 - b[1], (0, -1): b[3] - 5.5,
                             (1, 0): 6.5 - b[0], (-1, 0): b[2] - 6.5}[(fx, fy)]
                     assert abs(back - reach) < 1e-9, (kind, rot, back)

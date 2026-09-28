@@ -12,6 +12,7 @@ import pygame
 from .settings import SCREEN_W, SCREEN_H
 from . import furniture as F
 from . import isofurn
+from . import wallart
 from .assets import chars
 
 TW, TH = 64, 32        # iso tile diamond (width, height)
@@ -129,8 +130,9 @@ def draw_grid(scr, ox, oy, area):
 
 
 # ---------------------------------------------------------------- room
-def draw_shell(scr, world, ox, oy, grid=False):
-    """Floor + two walls + (optional) build grid + wall decor."""
+def draw_shell(scr, world, ox, oy, grid=False, sky=None, minutes=None):
+    """Floor + two walls + (optional) build grid + wall decor. `sky`
+    (wallart.sky_key) tints the window glass, `minutes` sets the clock."""
     area = world.areas[world.current] if hasattr(world, "areas") else world.area
     c = _shades(world)
     x0, x1, y0, y1 = 1, area.w - 1, 1, area.h - 1
@@ -189,68 +191,125 @@ def draw_shell(scr, world, ox, oy, grid=False):
     if grid:
         draw_grid(scr, ox, oy, area)
 
-    # wall-mounted decor, sheared to lie in each wall's plane
+    # wall-mounted decor: real 3D pieces modelled in the wall's own plane
+    # (frames with thickness, a recessed window, a shelf that sticks out...)
     for pl in world.home_furniture:
         if F.CAT[pl.kind]["layer"] != "wall":
             continue
-        mid = wall_anchor(ox, oy, area, pl.gx, pl.gy)
         # wall lights default ON until the player toggles them; other wall
         # decor has no power state so it always renders lit
         won = pl.on or pl.kind not in F.TOGGLE
-        s = wall_decor_sprite(pl.kind, pl.color, pl.rot,
-                              "left" if pl.gx == 0 else "back", on=won)
-        scr.blit(s, (mid[0] - 17, mid[1] - s.get_height() // 2))
+        blit_wall(scr, ox, oy, area, pl.kind, pl.color, pl.gx, pl.gy, on=won,
+                  sky=sky, minutes=minutes)
 
 
-_wall_cache = {}
+def wall_side(gx, gy):
+    """Which wall a wall-decor cell hangs on (matches wall_anchor)."""
+    return "back" if gy == 0 else "left"
 
 
-def wall_decor_sprite(kind, color, rot, side, on=True):
-    """Wall decor SHEARED into the wall plane: the back wall slopes down-right
-    (+1px y per 2px x) and the left wall down-left, so paintings, windows and
-    clocks visually lie ON the wall instead of floating upright in front of it.
-    Built by blitting 1px columns of the flat sprite at sloping y offsets."""
-    key = (kind, color, rot, side, on)
-    sp = _wall_cache.get(key)
-    if sp is None:
-        base = pygame.transform.smoothscale(F.sprite(kind, color, rot, on=on),
-                                            (34, 34))
-        w, h = base.get_size()
-        sp = pygame.Surface((w, h + w // 2 + 1), pygame.SRCALPHA)
-        for x in range(w):
-            yoff = (x // 2) if side == "back" else ((w - 1 - x) // 2)
-            sp.blit(base, (x, yoff), pygame.Rect(x, 0, 1, h))
-        _wall_cache[key] = sp
-    return sp
+def blit_wall(scr, ox, oy, area, kind, color, gx, gy, on=True, alpha=255,
+              sky=None, minutes=None):
+    """Draw one wall piece on its wall cell (the room and Build's ghost)."""
+    x0, y0 = 1, 1
+    if wall_side(gx, gy) == "back":
+        c = max(x0, min(area.w - 2, gx))
+        foot = proj(ox, oy, c, y0)
+    else:
+        c = max(y0, min(area.h - 2, gy))
+        foot = proj(ox, oy, x0, c + 1)
+    wallart.blit(scr, foot, kind, color, wall_side(gx, gy), on=on,
+                 sky=sky or ("day", "sunny"), minutes=minutes, alpha=alpha)
+
+
+# seat-front distance from the seat centre per kind (tile units): the knees
+# land a touch PAST it, so the shins hang just clear of the seat's edge
+_SEAT_EDGE = {"chair": 0.30, "stool": 0.30, "piano_bench": 0.30, "bench": 0.34,
+              "sofa": 0.36, "armchair": 0.36}
+_KNEE_OVER = 0.06               # knees overhang the front edge (real sitting)
+_LEG_HALF = 0.062               # half-width of one leg, across the lap
+_LEG_GAP = 0.085                # leg centre offset from the body's mid-line
+# the trousers/shoes as lit 3D boxes: a notch lighter than the flat standing
+# sprite's PANTS/SHOE so the lap's top face and the shin sides still read
+_LEG_COL = (78, 68, 98)
+_SHOE_COL = (56, 48, 64)
+
+
+def _leg_boxes(sx, sy, st, f, kind):
+    """The seated legs as real tile-space boxes (thigh along the seat, shin
+    straight down in front of the knee, shoe on the floor): [(x0,y0,x1,y1,z0,
+    z1,color)], far leg first. `f` = the facing (unit grid vector)."""
+    knee = _SEAT_EDGE.get(kind, 0.30) + _KNEE_OVER
+    if f == (0, 1):
+        knee -= 0.06            # camera-facing sitters already slid forward
+    lx, ly = abs(f[1]), abs(f[0])               # lateral axis (toward camera = +)
+    # chibi shins are short: on a tall seat the feet dangle a little above the
+    # floor (cute, and it reads as SITTING); on low seats they rest on it
+    foot = max(0, st - 12)
+
+    def rect(a0, a1, b0, b1):
+        """Box spanning a0..a1 along the facing and b0..b1 across it."""
+        xs = [sx + f[0] * a + lx * b for a in (a0, a1) for b in (b0, b1)]
+        ys = [sy + f[1] * a + ly * b for a in (a0, a1) for b in (b0, b1)]
+        return min(xs), min(ys), max(xs), max(ys)
+
+    out = []
+    for side in (-1, 1):                         # -lateral leg is the far one
+        c = side * _LEG_GAP
+        b0, b1 = c - _LEG_HALF, c + _LEG_HALF
+        out.append(rect(knee - 0.11, knee + 0.06, b0 - 0.01, b1 + 0.01)
+                   + (foot, foot + 3, _SHOE_COL))
+        out.append(rect(knee - 0.09, knee, b0, b1) + (foot + 3, st, _LEG_COL))
+        out.append(rect(-0.04, knee, b0, b1) + (st, st + 4, _LEG_COL))
+    return out
+
+
+def _draw_leg_boxes(scr, ox, oy, boxes):
+    def P(a, b):
+        return proj(ox, oy, a, b)
+    for x0, y0, x1, y1, z0, z1, col in boxes:
+        isofurn._box(scr, P, x0, y0, x1, y1, z1 - z0, col, base=z0)
 
 
 def _sitter_ops(scr, ox, oy, p, sx, sy, st, kind="chair"):
     """[(bbox, draw-fn), ...] ops for a seated player, slotted into the seat
     piece's OWN depth-sorted parts: backrest behind the body, armrests / the
-    front edge over the hips. When the player faces AWAY ('up'/'left') the
-    legs hang on the FAR side, so they are a separate LOW op the seat itself
-    occludes -- only the feet peek out underneath (Stardew draw-tile style).
+    front edge over the hips. The pose follows the room's diagonals (see
+    chars._draw_seated): an upper-body sprite on top of 3D leg boxes. When the
+    player faces AWAY ('up'/'left') the legs hang on the FAR side, so they are
+    a separate op that sorts before the seat -- the seat hides the shins and
+    only the feet peek out underneath.
     Each fn carries a .role ('body' / 'legs' / 'ghost') for tests & callers."""
     d = ("up" if p.fy < 0 else "down" if p.fy > 0
          else "left" if p.fx < 0 else "right")
+    fx = 1 if d == "right" else -1 if d == "left" else 0
+    fy = 1 if d == "down" else -1 if d == "up" else 0
     isx, isy = proj(ox, oy, sx, sy)
     top_left = (isx - chars.seated_frames(p.appearance)[d].get_width() // 2,
                 isy - st - chars.SEATED_HIP_Y)
+    legs = _leg_boxes(sx, sy, st, (fx, fy), kind)
+    away = d in ("up", "left")
 
     def body():
-        scr.blit(chars.seated_frames(p.appearance)[d], top_left)
+        if not away:                            # lap + shins in front: under the
+            _draw_leg_boxes(scr, ox, oy, legs)  # torso, which then rests its
+        scr.blit(chars.seated_frames(p.appearance)[d], top_left)   # hands on them
     body.role = "body"
     ops = []
-    if d == "up":
-        def legs():
-            fr = chars.seated_leg_frames()[d]
-            # +7px: the feet reach past the seat's bottom edge and peek out
-            # underneath while the seat occludes the shins
-            scr.blit(fr, (isx - fr.get_width() // 2,
-                          isy - st - chars.SEATED_HIP_Y + 7))
-        legs.role = "legs"
-        # low + thin box: every seat surface (bases at z>=11) sorts in front
-        ops.append(((sx - 0.14, sy - 0.14, sx + 0.14, sy + 0.14, 2, 10), legs))
+    if away:
+        def legs_fn():
+            _draw_leg_boxes(scr, ox, oy, legs)
+        legs_fn.role = "legs"
+        # the shins' real box, clipped at the seat's front edge so every seat
+        # part sorts in front of it (the far chair legs too)
+        edge = _SEAT_EDGE.get(kind, 0.30)
+        knee = edge + _KNEE_OVER
+        w = _LEG_GAP + _LEG_HALF + 0.01
+        if fy:
+            lb = (sx - w, sy - knee - 0.07, sx + w, sy - edge)
+        else:
+            lb = (sx - knee - 0.07, sy - w, sx - edge, sy + w)
+        ops.append((lb + (0, st), legs_fn))
     # the body sits ON the cushion (z starts at the seat top, so the cushion
     # cleanly z-sorts below it).
     # small leggy seats: the sitter's box must OVERLAP the thin legs (so they sort
@@ -265,29 +324,19 @@ def _sitter_ops(scr, ox, oy, p, sx, sy, st, kind="chair"):
     # box at the cushion face lets the x/y rule separate them cleanly: back
     # cushion behind a camera-facing sitter, in front of an away-facing one.
     bk = _BACK_REACH.get(kind, hw)
-    fx = 1 if d == "right" else -1 if d == "left" else 0
-    fy = 1 if d == "down" else -1 if d == "up" else 0
     box = (sx - (bk if fx > 0 else hw), sy - (bk if fy > 0 else hw),
            sx + (bk if fx < 0 else hw), sy + (bk if fy < 0 else hw))
-    if kind == "chair" and d == "left":
-        # SIDE-facing chair: the narrow backrest lands camera-side and would
-        # swallow the whole torso. Lift the body's z floor above the backrest
-        # top (29px) AND stretch its box over the backrest's x-range so the
-        # x-rule can't pre-empt the z-rule -- the player then visibly sits
-        # leaning against the backrest instead of hiding behind it.
-        ops.append(((sx - hw, sy - hw, sx + 0.48, sy + hw, 30, 64), body))
-    else:
-        ops.append((box + (st, st + 34), body))
-        if d in ("up", "left") and kind in _BACK_REACH:
-            # facing AWAY: the backrest sits between the camera and the sitter
-            # and hides everything but the head. Paint a see-through silhouette
-            # of the HIDDEN part of the body over it (Sims-style x-ray) so the
-            # farmer visibly sits IN the seat; the box lies past every part of
-            # the piece, so this op always flushes last.
-            def ghost():
-                _blit_ghost(scr, p.appearance, d, top_left)
-            ghost.role = "ghost"
-            ops.append(((sx + 9, sy + 9, sx + 9.1, sy + 9.1, 0, 1), ghost))
+    ops.append((box + (st, st + 34), body))
+    if away and kind in _BACK_REACH:
+        # facing AWAY: the backrest sits between the camera and the sitter
+        # and hides everything but the head. Paint a see-through silhouette
+        # of the HIDDEN part of the body over it (Sims-style x-ray) so the
+        # farmer visibly sits IN the seat; the box lies past every part of
+        # the piece, so this op always flushes last.
+        def ghost():
+            _blit_ghost(scr, p.appearance, d, top_left)
+        ghost.role = "ghost"
+        ops.append(((sx + 9, sy + 9, sx + 9.1, sy + 9.1, 0, 1), ghost))
     return ops
 
 
@@ -411,7 +460,10 @@ def draw_room(game, build=False, players=True):
     world = game.world
     area = world.area
     ox, oy = origin(area)
-    draw_shell(scr, world, ox, oy, grid=build)
+    t = getattr(game, "time", None)
+    minutes = getattr(t, "minutes", None)
+    draw_shell(scr, world, ox, oy, grid=build, minutes=minutes,
+               sky=wallart.sky_key(minutes, getattr(game, "weather", None)))
 
     def Pf(a, b):
         return proj(ox, oy, a, b)

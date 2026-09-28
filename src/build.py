@@ -743,10 +743,8 @@ class BuildMode:
         spr = F.sprite(self.brush, F.PALETTE[self.ci][1], self.rot)
         if d["layer"] == "wall":
             mid = HI.wall_anchor(ox, oy, area, gx, gy)
-            s = HI.wall_decor_sprite(self.brush, F.PALETTE[self.ci][1], self.rot,
-                                     "left" if gx == 0 else "back").copy()
-            s.set_alpha(170)
-            surf.blit(s, (mid[0] - 17, mid[1] - s.get_height() // 2))
+            HI.blit_wall(surf, ox, oy, area, self.brush, F.PALETTE[self.ci][1], gx, gy,
+                         on=True, alpha=170)
             pygame.draw.circle(surf, col, mid, 19, 2)
         elif d["layer"] == "top":
             sup = self._top_support(gx, gy)

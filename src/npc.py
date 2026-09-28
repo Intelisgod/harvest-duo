@@ -45,11 +45,17 @@ for _n in SD.NEW_VILLAGERS:
 GIFT_POINTS = {"love": 60, "like": 35, "neutral": 15, "dislike": -20}
 
 
-def npc_frames(name):
+def npc_skin(name):
+    return assets.SKIN_TONES[LOOKS.get(name, ("short", 0, 2))[2] % len(assets.SKIN_TONES)]
+
+
+def npc_frames(name, arms=True):
+    """Walk frames; arms="umbrella" = one hand up, gripping an umbrella."""
     style, hair_i, skin_i = LOOKS.get(name, ("short", 0, 2))
-    return assets.player_frames(assets.SKIN_TONES[skin_i % len(assets.SKIN_TONES)], style,
+    return assets.player_frames(npc_skin(name), style,
                                 assets.HAIR_COLORS[hair_i % len(assets.HAIR_COLORS)],
-                                NPC_DATA.get(name, {}).get("color", (160, 160, 170)))
+                                NPC_DATA.get(name, {}).get("color", (160, 160, 170)),
+                                arms)
 
 
 class NPC:
@@ -268,12 +274,18 @@ class NPC:
     def heart_count(self):
         return self.hearts // HEART_PTS
 
+    # set each frame by the Story system on rainy days (canopy colour or None)
+    umbrella = None
+
     def draw(self, surf, cam):
         surf.blit(assets.shadow(), (self.x - cam.x - 13, self.y - cam.y + 4))
         frame_i = int(self.anim_t) % 4 if self.moving else 0
         bob = 0 if self.moving else int(math.sin(self.idle_t * 3) * 1.5)
-        surf.blit(self.frames[self.dirname][frame_i],
-                  (self.x - TILE / 2 - cam.x, self.y - TILE / 2 - 12 - cam.y + bob))
+        pos = (self.x - TILE / 2 - cam.x, self.y - TILE / 2 - 12 - cam.y + bob)
+        if self.umbrella is None:
+            surf.blit(self.frames[self.dirname][frame_i], pos)
+        else:
+            self._draw_with_umbrella(surf, pos, frame_i)
         hx = int(self.x - cam.x)
         hy = int(self.y - cam.y - 30 + math.sin(self.idle_t * 2) * 2)
         if self.react is not None:
@@ -294,6 +306,33 @@ class NPC:
             pygame.draw.circle(surf, (230, 90, 110), (hx - 3, hy), 3)
             pygame.draw.circle(surf, (230, 90, 110), (hx + 3, hy), 3)
             pygame.draw.polygon(surf, (230, 90, 110), [(hx - 6, hy + 1), (hx + 6, hy + 1), (hx, hy + 8)])
+
+    def _draw_with_umbrella(self, surf, pos, frame_i):
+        """Walk frame with one hand up on the shaft; the canopy rides over the
+        head, leaning a touch toward the gripping hand. Seen from behind the
+        shaft is in FRONT of the villager, so it all goes under the body."""
+        from . import story_art
+        from .assets import chars
+        d = self.dirname
+        fr = npc_frames(self.name, "umbrella")[d][frame_i]
+        step = -1 if frame_i in (1, 3) else 0
+        hx, hy = chars.UMBRELLA_HAND[d]
+        hand = (int(pos[0] + hx), int(pos[1] + hy + step))
+        lean = {"down": 8, "up": 4, "left": -11, "right": 11}[d]
+        sway = int(round(math.sin(self.idle_t * 2.2 + self.x * 0.01)))
+        can = story_art.umbrella_canopy(self.umbrella)
+        top = (int(pos[0] + TILE / 2 + lean + sway), int(pos[1] + 1 + step))
+
+        def umbrella():
+            pygame.draw.line(surf, (96, 74, 62), (top[0], top[1] - 12), hand, 2)
+            surf.blit(can, (top[0] - can.get_width() // 2, top[1] - 20))
+        if d == "up":
+            umbrella()
+            surf.blit(fr, pos)
+            return
+        surf.blit(fr, pos)
+        umbrella()
+        pygame.draw.circle(surf, npc_skin(self.name), hand, 3)     # fingers over the shaft
 
     def _draw_react(self, surf, hx, hy):
         """Gift reaction emote: love = big heart, like = music note,

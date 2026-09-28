@@ -370,18 +370,17 @@ class StoryMixin(RestorationMixin, FestivalGamesMixin):
     # ---- rainy days: villagers outdoors carry a little umbrella ----
     _INDOOR = ("home", "temple", "coop", "mine")
 
-    def _draw_world_story_umbrellas(self):
-        if not self.npcs or str(getattr(self, "weather", "")) not in ("rain", "storm"):
-            return
-        if self.world.current in self._INDOOR:
-            return
-        cam = self.cam
-        for n in self.npcs:
-            if n.name == "Somchai":          # he loves the rain. No umbrella. Ever.
-                continue
-            spr = ART.umbrella(NPC_DATA.get(n.name, {}).get("color", (200, 170, 220)))
-            sway = int(math.sin(self.anim_t * 2 + n.x * 0.01) * 1.5)
-            self.screen.blit(spr, (int(n.x - cam.x - 18 + sway), int(n.y - cam.y - 62)))
+    def _world_sprites_story_umbrellas(self):
+        """Hand each villager outdoors an umbrella (NPC.draw holds it in one
+        hand). Runs in the entity pass just before the y-sorted draw, so the
+        flag is fresh on host and LAN client alike; draws nothing itself."""
+        rain = (str(getattr(self, "weather", "")) in ("rain", "storm")
+                and self.world.current not in self._INDOOR)
+        for n in self.npcs or ():
+            # Somchai loves the rain. No umbrella. Ever.
+            n.umbrella = (NPC_DATA.get(n.name, {}).get("color", (200, 170, 220))
+                          if rain and n.name != "Somchai" else None)
+        return []
 
     # ---- villagers' work props (Luna's easel, Kai's anvil...) at their spot ----
     _PROP_AREAS = {"Kai": ("town", "forest"), "Fah": ("town",), "Somchai": ("beach",)}
